@@ -10,7 +10,7 @@ Applicazione per il monitoraggio delle risorse, dei gruppi e dell'avanzamento co
 
 ## Dati e pubblicazione
 
-Il workflow sincronizza i dati Azure/CRM/NAV e genera il sito. I secrets possono essere configurati a livello repository oppure condivisi dall'organizzazione con questo repository:
+Per sincronizzare i Parquet Azure, configura nel repository (o condividi con esso a livello organizzazione) questi secrets:
 
 - `AZURE_STORAGE_ACCOUNT`
 - `AZURE_STORAGE_KEY`
@@ -18,12 +18,12 @@ Il workflow sincronizza i dati Azure/CRM/NAV e genera il sito. I secrets possono
 - `AZURE_STORAGE_BLOB`
 - `AZURE_ACTIVITY_STORAGE_ACCOUNT`
 - `AZURE_ACTIVITY_STORAGE_KEY`
-- `AZURE_ACTIVITY_STORAGE_CONTAINER`
-- `AZURE_ACTIVITY_STORAGE_BLOB`
-- `CRM_SQL_SERVER`, `CRM_SQL_DATABASE`, `CRM_SQL_USER`, `CRM_SQL_PASSWORD`, `CRM_SQL_DRIVER`
-- `NAV_SQL_SERVER`, `NAV_SQL_DATABASE`, `NAV_COMPANY_NAME`, `JOBS_MIN_YEAR`
 
-Per evitare che il workflow pubblichi dati prima che l'accesso sia ristretto, la pubblicazione è bloccata finché la variabile repository `ACTIVITYHUB_PRIVATE_PAGES=true` non viene impostata dopo aver configurato GitHub Pages come privata. La pianificazione ogni 5 minuti viene abilitata impostando anche `ACTIVITYHUB_DATA_SYNC_ENABLED=true`.
+I primi quattro puntano a `jobs_complete.parquet` e `resources.json`; i due secret `AZURE_ACTIVITY_STORAGE_*` puntano al Parquet delle attività giornaliere (container e blob predefiniti: `parquet-files` e `SQLSERVER1_ZeroDownTimeDB_AttivitaGiornaliere.parquet`). Se i due Parquet usano lo stesso account, gli ultimi due possono usare gli stessi valori `AZURE_STORAGE_ACCOUNT` e `AZURE_STORAGE_KEY`.
+
+I secret `CRM_SQL_*` e `NAV_SQL_*` non sono necessari per la sincronizzazione attuale, che legge i dati già esportati nei Parquet.
+
+Per evitare che il workflow pubblichi dati prima che l'accesso sia ristretto, il deploy è bloccato finché la variabile repository `ACTIVITYHUB_PRIVATE_PAGES=true` non viene impostata dopo aver configurato GitHub Pages come privata. La pianificazione ogni 5 minuti si abilita con `ACTIVITYHUB_DATA_SYNC_ENABLED=true`.
 
 Una repository privata non rende privato un sito GitHub Pages. La pubblicazione privata di Pages richiede GitHub Enterprise Cloud e limita l'accesso a chi può leggere il repository.
 
