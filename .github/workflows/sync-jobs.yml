@@ -13,7 +13,7 @@ on:
 
 jobs:
   sync:
-    if: ${{ github.event_name != 'schedule' || (vars.ACTIVITYHUB_DATA_SYNC_ENABLED == 'true' && vars.ACTIVITYHUB_PRIVATE_PAGES == 'true') }}
+    if: ${{ vars.ACTIVITYHUB_AUTH_READY == 'true' }}
     runs-on: ubuntu-latest
     
     steps:
@@ -143,6 +143,5 @@ jobs:
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./dist
-          cname: false
           user_name: 'github-actions[bot]'
           user_email: 'github-actions[bot]@users.noreply.github.com'
