@@ -13,6 +13,7 @@ on:
 
 jobs:
   sync:
+    if: ${{ github.event_name != 'schedule' || (vars.ACTIVITYHUB_DATA_SYNC_ENABLED == 'true' && vars.ACTIVITYHUB_PRIVATE_PAGES == 'true') }}
     runs-on: ubuntu-latest
     
     steps:
@@ -74,11 +75,28 @@ jobs:
           echo "AZURE_ACTIVITY_STORAGE_KEY set: ${{ secrets.AZURE_ACTIVITY_STORAGE_KEY != '' }}"
 
       - name: Sync jobs from Azure Blob
+        if: ${{ secrets.AZURE_STORAGE_ACCOUNT != '' && secrets.AZURE_STORAGE_KEY != '' }}
         continue-on-error: true
         run: |
           python sync-jobs.py && echo "SYNC_SOURCE=azure" >> $GITHUB_ENV || echo "SYNC_SOURCE=none" >> $GITHUB_ENV
 
+      - name: Check activity data credentials
+        id: activity-credentials
+        shell: bash
+        env:
+          AZURE_ACTIVITY_STORAGE_ACCOUNT: ${{ secrets.AZURE_ACTIVITY_STORAGE_ACCOUNT }}
+          AZURE_ACTIVITY_STORAGE_KEY: ${{ secrets.AZURE_ACTIVITY_STORAGE_KEY }}
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        run: |
+          if { [ -n "$AZURE_ACTIVITY_STORAGE_ACCOUNT" ] && [ -n "$AZURE_ACTIVITY_STORAGE_KEY" ]; } || { [ -n "$AZURE_STORAGE_ACCOUNT" ] && [ -n "$AZURE_STORAGE_KEY" ]; }; then
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Sync daily activity logs and CRM activity detail from Azure Blob
+        if: ${{ steps.activity-credentials.outputs.configured == 'true' }}
         run: python sync-activity-logs.py
 
       - name: Check resources.json
@@ -109,6 +127,7 @@ jobs:
           [ -f public/activity-logs.json ] && cp public/activity-logs.json dist/activity-logs.json || echo "activity-logs.json non presente: la pagina mostrerà un avviso"
       
       - name: Deploy to GitHub Pages
+        if: ${{ steps.activity-credentials.outputs.configured == 'true' && vars.ACTIVITYHUB_PRIVATE_PAGES == 'true' }}
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
