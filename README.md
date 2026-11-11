@@ -25,7 +25,7 @@ I secret `CRM_SQL_*` e `NAV_SQL_*` non sono necessari per la sincronizzazione at
 
 Per evitare che il workflow pubblichi dati prima che l'accesso sia ristretto, il deploy è bloccato finché la variabile repository `ACTIVITYHUB_PRIVATE_PAGES=true` non viene impostata dopo aver configurato GitHub Pages come privata. La pianificazione ogni 5 minuti si abilita con `ACTIVITYHUB_DATA_SYNC_ENABLED=true`.
 
-Una repository privata non rende privato un sito GitHub Pages. La pubblicazione privata di Pages richiede GitHub Enterprise Cloud e limita l'accesso a chi può leggere il repository.
+Il workflow pubblica i file compilati nel branch `gh-pages`. In **Settings → Pages**, seleziona **Deploy from a branch**, branch `gh-pages` e cartella `/(root)`; lascia la visibilità su privata e usa l'URL `Visit site` mostrato in quella pagina. Una repository privata non rende privato un sito GitHub Pages. La pubblicazione privata di Pages richiede GitHub Enterprise Cloud e limita l'accesso a chi può leggere il repository.
 
 ## Sviluppo
 
@@ -34,4 +34,4 @@ npm install
 npm run dev
 ```
 
-Per buildare localmente: `VITE_BASE=/INT-activityhub/ npm run build`.
+Per buildare localmente: `VITE_BASE=/ npm run build`.
