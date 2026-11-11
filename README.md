@@ -34,4 +34,4 @@ npm install
 npm run dev
 ```
 
-Per buildare localmente: `VITE_BASE=/ npm run build`.
+Per buildare localmente: `VITE_BASE=/INT-activityhub/ npm run build`.

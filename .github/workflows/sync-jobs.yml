@@ -127,7 +127,7 @@ jobs:
       
       - name: Build application
         run: |
-          export VITE_BASE=/
+          export VITE_BASE=/INT-activityhub/
           export VITE_ALLOW_STATIC_JOBS_FALLBACK=true
           npm run build
       
