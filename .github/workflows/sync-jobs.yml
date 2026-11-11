@@ -1,0 +1,118 @@
+name: Sync Jobs (Azure Blob)
+
+permissions:
+  contents: write
+
+on:
+  push:
+    branches:
+      - main
+  schedule:
+    - cron: '1-59/5 * * * *' # Ogni 5 minuti, sfalsata di un minuto
+  workflow_dispatch:  # Permette di triggerare manualmente da GitHub
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pandas pyarrow azure-storage-blob python-dotenv
+      
+      - name: Install Node dependencies
+        run: npm install
+      
+      - name: Create .env file
+        run: |
+          cat > .env << 'EOF'
+          AZURE_STORAGE_ACCOUNT=${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY=${{ secrets.AZURE_STORAGE_KEY }}
+          AZURE_STORAGE_CONTAINER=${{ secrets.AZURE_STORAGE_CONTAINER }}
+          AZURE_STORAGE_BLOB=${{ secrets.AZURE_STORAGE_BLOB }}
+          AZURE_ACTIVITY_STORAGE_ACCOUNT=${{ secrets.AZURE_ACTIVITY_STORAGE_ACCOUNT || secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_ACTIVITY_STORAGE_KEY=${{ secrets.AZURE_ACTIVITY_STORAGE_KEY || secrets.AZURE_STORAGE_KEY }}
+          AZURE_ACTIVITY_STORAGE_CONTAINER=${{ secrets.AZURE_ACTIVITY_STORAGE_CONTAINER || 'parquet-files' }}
+          AZURE_ACTIVITY_STORAGE_BLOB=${{ secrets.AZURE_ACTIVITY_STORAGE_BLOB || 'SQLSERVER1_ZeroDownTimeDB_AttivitaGiornaliere.parquet' }}
+          CRM_SQL_SERVER=${{ secrets.CRM_SQL_SERVER }}
+          CRM_SQL_DATABASE=${{ secrets.CRM_SQL_DATABASE }}
+          CRM_SQL_USER=${{ secrets.CRM_SQL_USER }}
+          CRM_SQL_PASSWORD=${{ secrets.CRM_SQL_PASSWORD }}
+          CRM_SQL_DRIVER=${{ secrets.CRM_SQL_DRIVER }}
+          NAV_SQL_SERVER=${{ secrets.NAV_SQL_SERVER }}
+          NAV_SQL_DATABASE=${{ secrets.NAV_SQL_DATABASE }}
+          NAV_COMPANY_NAME=${{ secrets.NAV_COMPANY_NAME }}
+          JOBS_MIN_YEAR=${{ secrets.JOBS_MIN_YEAR }}
+          EOF
+
+      - name: Check Azure secrets presence
+        run: |
+          echo "AZURE_STORAGE_ACCOUNT set: ${{ secrets.AZURE_STORAGE_ACCOUNT != '' }}"
+          echo "AZURE_STORAGE_KEY set: ${{ secrets.AZURE_STORAGE_KEY != '' }}"
+          echo "AZURE_STORAGE_CONTAINER set: ${{ secrets.AZURE_STORAGE_CONTAINER != '' }}"
+          echo "AZURE_STORAGE_BLOB set: ${{ secrets.AZURE_STORAGE_BLOB != '' }}"
+
+      - name: Check activity storage secrets presence
+        run: |
+          echo "AZURE_ACTIVITY_STORAGE_ACCOUNT set: ${{ secrets.AZURE_ACTIVITY_STORAGE_ACCOUNT != '' }}"
+          echo "AZURE_ACTIVITY_STORAGE_KEY set: ${{ secrets.AZURE_ACTIVITY_STORAGE_KEY != '' }}"
+
+      - name: Sync jobs from Azure Blob
+        continue-on-error: true
+        run: |
+          python sync-jobs.py && echo "SYNC_SOURCE=azure" >> $GITHUB_ENV || echo "SYNC_SOURCE=none" >> $GITHUB_ENV
+
+      - name: Sync daily activity logs and CRM activity detail from Azure Blob
+        run: python sync-activity-logs.py
+
+      - name: Check resources.json
+        run: |
+          if [ -f public/resources.json ]; then
+            echo "✅ resources.json trovato: $(wc -c < public/resources.json) bytes, $(python3 -c "import json; d=json.load(open('public/resources.json')); print(len(d), 'risorse')")"
+            echo "Primo record: $(python3 -c "import json; d=json.load(open('public/resources.json')); print(d[0] if d else 'vuoto')")"
+          else
+            echo "❌ resources.json NON trovato in public/ — non verrà incluso nel deploy"
+          fi
+
+      - name: Print sync source used
+        run: |
+          echo "Sync source used: $SYNC_SOURCE"
+      
+      - name: Build application
+        run: |
+          export VITE_BASE=/INT-activityhub/
+          export VITE_ALLOW_STATIC_JOBS_FALLBACK=true
+          export VITE_SUPABASE_URL=https://teadzgcurjjdbuoohakr.supabase.co
+          export VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InRlYWR6Z2N1cmpqZGJ1b29oYWtyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0NTk4MDgsImV4cCI6MjA4ODAzNTgwOH0.PqyePbd6FISVUmAi4If41BCM_QpTpCr-7HkhENnE7IE
+          npm run build
+      
+      - name: Copy jobs.json to dist
+        run: |
+          cp public/jobs.json dist/jobs.json
+          [ -f public/resources.json ] && cp public/resources.json dist/resources.json || echo "resources.json non presente, skip"
+          [ -f public/activity-logs.json ] && cp public/activity-logs.json dist/activity-logs.json || echo "activity-logs.json non presente: la pagina mostrerà un avviso"
+      
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./dist
+          cname: false
+          user_name: 'github-actions[bot]'
+          user_email: 'github-actions[bot]@users.noreply.github.com'
