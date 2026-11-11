@@ -11,20 +11,22 @@ const USE_SUPABASE = !!supabase;
 const IS_GITHUB_PAGES = typeof window !== "undefined" && window.location.hostname.endsWith("github.io");
 // Su GitHub Pages i job CRM vengono letti dallo snapshot pubblicato generato da Azure durante il deploy.
 const USE_MOCK_JOBS = USE_LOCAL_STORAGE || IS_GITHUB_PAGES;
-const ALLOW_STATIC_JOBS_FALLBACK =
-  USE_LOCAL_STORAGE ||
-  (import.meta as any)?.env?.VITE_ALLOW_STATIC_JOBS_FALLBACK === "true";
+const ALLOW_STATIC_JOBS_FALLBACK = USE_LOCAL_STORAGE;
 const JOBS_REMOTE_URL = ((import.meta as any)?.env?.VITE_JOBS_URL || "").trim();
 const BASE_URL = ((import.meta as any)?.env?.BASE_URL || "/") as string;
 let jobsCache: any[] | null = null;
 
+async function loadPrivateJson<T>(filename: string): Promise<T> {
+  if (!supabase) throw new Error("Accesso ai dati protetti non configurato.");
+  const { data, error } = await supabase.storage.from("activityhub-data").download(filename);
+  if (error) throw new Error(`Download dati protetti non riuscito: ${error.message}`);
+  if (typeof DecompressionStream === "undefined") throw new Error("Il browser non supporta la decompressione dei dati.");
+  const stream = data.stream().pipeThrough(new DecompressionStream("gzip"));
+  return JSON.parse(await new Response(stream).text()) as T;
+}
+
 export async function getActivityLogs(): Promise<Record<string, unknown>[]> {
-  let response = await fetch(`${BASE_URL}activity-logs.json`, { cache: "no-store" });
-  if (!response.ok) {
-    response = await fetch("https://raw.githubusercontent.com/lotgio/INT-APPTASKBI/gh-pages/activity-logs.json", { cache: "no-store" });
-  }
-  if (!response.ok) throw new Error(`Consuntivazioni non disponibili (${response.status})`);
-  const payload = await response.json();
+  const payload = await loadPrivateJson<Record<string, unknown>[]>("activity-logs.json.gz");
   return Array.isArray(payload) ? payload : [];
 }
 
@@ -98,12 +100,15 @@ function filterAndPaginateJobs(jobs: any[], options?: { limit?: number; offset?:
 async function loadPublishedJobs(): Promise<any[]> {
   if (jobsCache) return jobsCache;
 
-  const url = getJobsSourceUrl();
-  const response = await fetch(url, { cache: "no-store" });
-  if (!response.ok) {
-    throw new Error(`Errore jobs source: ${response.status}`);
+  if (supabase && !USE_LOCAL_STORAGE) {
+    const data = await loadPrivateJson<any[]>("jobs.json.gz");
+    jobsCache = Array.isArray(data) ? data : (data?.data || []);
+    return jobsCache;
   }
 
+  const url = getJobsSourceUrl();
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Errore jobs source: ${response.status}`);
   const data = await response.json();
   jobsCache = Array.isArray(data) ? data : (data?.data || []);
   return jobsCache;
@@ -568,19 +573,13 @@ export async function getJobsDataLastUpdate(): Promise<string | null> {
 
 export async function getResources(): Promise<Record<string, string>> {
   try {
-    // Risolve resources.json relativo alla pagina corrente (funziona su qualsiasi subpath)
-    const url = new URL("resources.json", window.location.href).href;
-    const response = await fetch(url, { cache: "no-store" });
-    if (!response.ok) {
-      console.warn(`[getResources] ${url} → HTTP ${response.status}`);
-      return {};
-    }
-    const data: Array<{ No: string; Name: string }> = await response.json();
-    console.info(`[getResources] caricate ${data.length} risorse da ${url}`);
-    return Object.fromEntries(data.map((r) => [r.No, r.Name]));
+    const data: Array<{ No: string; Name: string }> = supabase && !USE_LOCAL_STORAGE
+      ? await loadPrivateJson<Array<{ No: string; Name: string }>>("resources.json.gz")
+      : await (await fetch(new URL("resources.json", window.location.href), { cache: "no-store" })).json();
+    return Object.fromEntries((Array.isArray(data) ? data : []).map((r) => [r.No, r.Name]));
   } catch (err) {
     console.warn("[getResources] errore:", err);
-    return {};
+    throw err;
   }
 }
 
