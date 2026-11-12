@@ -1,4 +1,7 @@
 -- Private storage for Activity Hub exports. Applied to project khlgxvabdtnpnsabdhlu.
+grant select on public.activityhub_access to authenticated;
+revoke all on public.activityhub_access from anon;
+grant select on storage.objects to authenticated;
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values ('activityhub-data', 'activityhub-data', false, 52428800, array['application/gzip'])
 on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
