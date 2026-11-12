@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import { supabase } from "./supabaseClient";
 import "./AuthGate.css";
 import ActivityCalendarPage from "./ActivityCalendarPage";
@@ -76,7 +77,7 @@ export default function App() {
       setGate("ready");
     };
     supabase.auth.getSession().then(({ data }) => verify(data.session));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { void verify(session); });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => { window.setTimeout(() => { void verify(session); }, 0); });
     return () => { alive = false; listener.subscription.unsubscribe(); };
   }, []);
 
