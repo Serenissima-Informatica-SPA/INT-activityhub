@@ -88,11 +88,11 @@ const fmt = (value: number) => value.toLocaleString("it-IT", { maximumFractionDi
 const eur = (value: number) => value.toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
 const monthLabel = (date: Date) => date.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
 
-export default function GroupAnalysisPage() {
+export default function GroupAnalysisPage({ lockedGroup }: { lockedGroup?: TeamGroup } = {}) {
   const [records, setRecords] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [group, setGroup] = useState<TeamGroup>("BI");
+  const [group, setGroup] = useState<TeamGroup>(lockedGroup || "BI");
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const todayKey = italianToday();
 
@@ -258,7 +258,7 @@ export default function GroupAnalysisPage() {
         <section className="group-analysis-toolbar">
           <div className="group-analysis-group-picker" role="group" aria-label="Seleziona gruppo">
             <span>Gruppo</span>
-            <div>{GROUPS.map((item) => <button key={item} type="button" aria-pressed={group === item} onClick={() => setGroup(item)}>{item}</button>)}</div>
+            {lockedGroup ? <div><button type="button" aria-pressed="true" disabled>{lockedGroup}</button></div> : <div>{GROUPS.map((item) => <button key={item} type="button" aria-pressed={group === item} onClick={() => setGroup(item)}>{item}</button>)}</div>}
           </div>
           <div className="group-analysis-meta"><strong>{memberNames.length} componenti</strong><span>{plannedToDateText}</span></div>
         </section>
