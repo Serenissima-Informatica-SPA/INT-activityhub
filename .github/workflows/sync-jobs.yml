@@ -132,7 +132,9 @@ jobs:
           echo "Sync source used: $SYNC_SOURCE"
       
       - name: Remove private source exports before build
-        run: rm -f public/activity-logs.json public/jobs.json public/resources.json
+        run: |
+          rm -f public/activity-logs.json public/jobs.json public/resources.json public/DEV/activity-logs.json
+          rmdir public/DEV 2>/dev/null || true
       
       - name: Build application
         env:
