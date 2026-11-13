@@ -70,13 +70,11 @@ export default function App() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordFlow, setPasswordFlow] = useState(initialPasswordFlow);
   const passwordFlowRef = useRef(initialPasswordFlow);
   const [busy, setBusy] = useState(false);
 
   const markPasswordFlow = (active: boolean) => {
     passwordFlowRef.current = active;
-    setPasswordFlow(active);
   };
 
   useEffect(() => {
