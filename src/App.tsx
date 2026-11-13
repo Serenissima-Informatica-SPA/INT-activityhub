@@ -15,14 +15,17 @@ const PAGE_ITEMS: { id: PageId; label: string }[] = [
   { id: "job-progress", label: "Avanzamento commesse" },
 ];
 
-function HubApp() {
+function HubApp({ scope }: { scope: AccessScope }) {
   const [page, setPage] = useState<PageId>("activity-calendar");
   const tasks: Task[] = [];
+  const visiblePages = scope === "DEV"
+    ? PAGE_ITEMS.filter((item) => item.id === "activity-calendar" || item.id === "group-analysis")
+    : PAGE_ITEMS;
 
   return (
     <>
       <nav className="activity-hub-nav" aria-label="Pagine principali">
-        {PAGE_ITEMS.map((item) => (
+        {visiblePages.map((item) => (
           <button
             key={item.id}
             type="button"
@@ -35,10 +38,10 @@ function HubApp() {
         ))}
       </nav>
       {page === "activity-calendar" ? (
-        <ActivityCalendarPage />
+        <ActivityCalendarPage lockedGroup={scope === "DEV" ? "DEV" : undefined} />
       ) : page === "group-analysis" ? (
-        <GroupAnalysisPage />
-      ) : (
+        <GroupAnalysisPage lockedGroup={scope === "DEV" ? "DEV" : undefined} />
+      ) : scope === "all" ? (
         <JobProgressPage
           tasks={tasks}
           onSwitchPage={() => setPage("activity-calendar")}
@@ -49,6 +52,7 @@ function HubApp() {
 }
 
 type GateState = "loading" | "signed-out" | "checking" | "set-password" | "ready" | "denied";
+type AccessScope = "all" | "DEV";
 
 function isPasswordSetupLink() {
   const hash = new URLSearchParams(window.location.hash.slice(1));
@@ -72,6 +76,7 @@ export default function App() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const passwordFlowRef = useRef(initialPasswordFlow);
   const [busy, setBusy] = useState(false);
+  const [accessScope, setAccessScope] = useState<AccessScope>("all");
 
   const markPasswordFlow = (active: boolean) => {
     passwordFlowRef.current = active;
@@ -88,6 +93,7 @@ export default function App() {
     const verify = async (session: any, forcePasswordSetup = false) => {
       if (!session?.user) {
         if (alive) {
+          setAccessScope("all");
           if (forcePasswordSetup) {
             markPasswordFlow(false);
             clearAuthLinkParameters();
@@ -106,13 +112,14 @@ export default function App() {
       if (alive) setGate("checking");
       const { data, error: accessError } = await supabase
         .from("activityhub_access")
-        .select("user_id")
+        .select("user_id,access_scope")
         .eq("user_id", session.user.id)
         .maybeSingle();
 
       if (!alive) return;
       if (accessError || !data) {
         await supabase.auth.signOut();
+        setAccessScope("all");
         setGate("denied");
         setError(accessError
           ? "Non riesco a verificare l’abilitazione dell’account."
@@ -120,6 +127,8 @@ export default function App() {
         return;
       }
 
+      const scope = data.access_scope === "DEV" ? "DEV" : "all";
+      setAccessScope(scope);
       setError("");
       setGate("ready");
     };
@@ -210,7 +219,7 @@ export default function App() {
   };
 
   if (gate === "ready") {
-    return <><div className="auth-topbar"><span>Accesso effettuato</span><button className="auth-logout" onClick={() => void supabase?.auth.signOut()}>Esci</button></div><HubApp /></>;
+    return <><div className="auth-topbar"><span>Accesso effettuato</span><button className="auth-logout" onClick={() => void supabase?.auth.signOut()}>Esci</button></div><HubApp scope={accessScope} /></>;
   }
 
   if (gate === "loading" || gate === "checking") {
