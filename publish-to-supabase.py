@@ -23,8 +23,11 @@ MAX_UPLOAD_BYTES = 50 * 1024 * 1024
 
 def normalize_name(value):
     import unicodedata
-    normalized = unicodedata.normalize("NFD", str(value or ""))
-    return "".join(char for char in normalized if not unicodedata.combining(char)).lower().replace(" ", "").replace("'", "")
+    normalized = unicodedata.normalize("NFD", str(value or "")).lower()
+    return "".join(
+        char for char in normalized
+        if char.isalnum() and not unicodedata.combining(char)
+    )
 
 
 def create_dev_activity_export():
