@@ -99,14 +99,14 @@ function formatDay(dayKey: string) {
   return new Date(year, month - 1, day).toLocaleDateString("it-IT", { day: "numeric", month: "short", year: "numeric" });
 }
 
-export default function ActivityCalendarPage() {
+export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: TeamGroup } = {}) {
   const [records, setRecords] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => new Date());
   const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  const [group, setGroup] = useState<TeamGroup>("BI");
-  const [selectedPerson, setSelectedPerson] = useState(TEAM_MEMBERS.BI[0]);
+  const [group, setGroup] = useState<TeamGroup>(lockedGroup || "BI");
+  const [selectedPerson, setSelectedPerson] = useState(TEAM_MEMBERS[lockedGroup || "BI"][0]);
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<string | null>(null);
 
   async function refresh() {
@@ -396,7 +396,7 @@ export default function ActivityCalendarPage() {
         <section className="activity-toolbar">
           <div className="activity-group-picker" role="group" aria-label="Gruppo del team">
             <span>Gruppo</span>
-            <div>{(["BI", "CRM", "DEV", "CONSULENTI HBO", "CONSULENTI PMI (S)", "CONSULENTI PMI (P)", "MES"] as TeamGroup[]).map((teamGroup) => <button key={teamGroup} type="button" aria-pressed={group === teamGroup} onClick={() => { setGroup(teamGroup); setSelectedPerson(TEAM_MEMBERS[teamGroup][0]); }}>{teamGroup}</button>)}</div>
+            {lockedGroup ? <div><button type="button" aria-pressed="true" disabled>{lockedGroup}</button></div> : <div>{(["BI", "CRM", "DEV", "CONSULENTI HBO", "CONSULENTI PMI (S)", "CONSULENTI PMI (P)", "MES"] as TeamGroup[]).map((teamGroup) => <button key={teamGroup} type="button" aria-pressed={group === teamGroup} onClick={() => { setGroup(teamGroup); setSelectedPerson(TEAM_MEMBERS[teamGroup][0]); }}>{teamGroup}</button>)}</div>}
           </div>
           <label>Componente<select value={selectedPerson} onChange={(event) => setSelectedPerson(event.target.value)}>{people.map((name) => <option key={name} value={name}>{name}</option>)}</select></label>
         </section>
