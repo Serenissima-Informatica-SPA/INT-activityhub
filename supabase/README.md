@@ -10,13 +10,19 @@ Nel progetto Supabase:
 
 1. In **Authentication → Sign In / Providers**, disattivare le registrazioni pubbliche (sign-ups). Gli utenti vanno invitati individualmente.
 2. In **Settings → API Keys**, copiare la chiave segreta legacy `service_role`. Non inserirla mai nel codice, nel browser o in una chat.
-3. Invitare ciascun utente da **Authentication → Users**. Per abilitarlo alla lettura, eseguire dalla SQL Editor, sostituendo l'indirizzo:
+3. Invitare ciascun utente da **Authentication → Users**. Per un account con accesso completo, eseguire dalla SQL Editor:
    ```sql
-   insert into public.activityhub_access (user_id, enabled)
-   select id, true from auth.users where email = 'nome@serenissima.it'
-   on conflict (user_id) do update set enabled = true;
+   insert into public.activityhub_access (user_id, enabled, access_scope)
+   select id, true, 'all' from auth.users where lower(email) = lower('nome@serenissima.it')
+   on conflict (user_id) do update set enabled = true, access_scope = 'all';
    ```
-   Per revocare l'accesso: `update public.activityhub_access set enabled = false where user_id = 'UUID';`
+   Per un account limitato al gruppo DEV, usare `'DEV'` come ambito:
+   ```sql
+   insert into public.activityhub_access (user_id, enabled, access_scope)
+   select id, true, 'DEV' from auth.users where lower(email) = lower('nome@serenissima.it')
+   on conflict (user_id) do update set enabled = true, access_scope = 'DEV';
+   ```
+   L'ambito DEV può scaricare solo l'export filtrato dei componenti DEV e vede soltanto Monitor risorse e Monitor gruppi. Per revocare l'accesso: `update public.activityhub_access set enabled = false where user_id = 'UUID';`
 
 Il progetto è già configurato con il bucket privato `activityhub-data`, la tabella di abilitazione e le policy RLS. Il ruolo anonimo non può leggere il bucket. Anche eventuali account creati per errore non possono accedere ai dati senza una riga abilitata.
 
