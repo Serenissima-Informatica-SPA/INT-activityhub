@@ -54,6 +54,7 @@ def main():
     if not base_url or not service_key:
         raise RuntimeError("Impostare i secrets SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.")
 
+    create_dev_activity_export()
     for source_name, target_name in FILES.items():
         source = Path("public") / source_name
         if not source.is_file():
