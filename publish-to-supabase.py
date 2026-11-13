@@ -11,8 +11,38 @@ FILES = {
     "activity-logs.json": "activity-logs.json.gz",
     "jobs.json": "jobs.json.gz",
     "resources.json": "resources.json.gz",
+    "DEV/activity-logs.json": "DEV/activity-logs.json.gz",
+}
+DEV_MEMBERS = {
+    "Albanese Lorenzo", "Brigo Matteo", "Brotto Fabio", "Cecchin Chiara",
+    "Cestaro Luca", "Dian Enrico", "Luise Alessandro", "Marino Daniele",
+    "Verzotto Maria", "Rampazzo Lisa", "Sarto Michele", "Omodei Cesare",
 }
 MAX_UPLOAD_BYTES = 50 * 1024 * 1024
+
+
+def normalize_name(value):
+    import unicodedata
+    normalized = unicodedata.normalize("NFD", str(value or ""))
+    return "".join(char for char in normalized if not unicodedata.combining(char)).lower().replace(" ", "").replace("'", "")
+
+
+def create_dev_activity_export():
+    source = Path("public") / "activity-logs.json"
+    rows = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(rows, list):
+        raise ValueError(f"{source} non contiene una lista valida.")
+    allowed = {normalize_name(name) for name in DEV_MEMBERS}
+    dev_rows = [
+        row for row in rows
+        if normalize_name(row.get("Componente", "")) in allowed
+    ]
+    if not dev_rows:
+        raise ValueError("Export DEV vuoto: nessun componente DEV corrisponde ai dati, upload interrotto.")
+    target = Path("public") / "DEV" / "activity-logs.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(dev_rows, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(f"Creato export DEV: {len(dev_rows)} righe su {len(rows)} totali.")
 
 
 def main():
