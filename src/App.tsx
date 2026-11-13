@@ -46,7 +46,7 @@ function HubApp({ scope }: { scope: AccessScope }) {
           tasks={tasks}
           onSwitchPage={() => setPage("activity-calendar")}
         />
-      )}
+      ) : null}
     </>
   );
 }
