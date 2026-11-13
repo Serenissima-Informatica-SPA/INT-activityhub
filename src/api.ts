@@ -18,7 +18,21 @@ let jobsCache: any[] | null = null;
 
 async function loadPrivateJson<T>(filename: string): Promise<T> {
   if (!supabase) throw new Error("Accesso ai dati protetti non configurato.");
-  const { data, error } = await supabase.storage.from("activityhub-data").download(filename);
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.user) throw new Error("Sessione non valida. Accedi di nuovo.");
+  const { data: access, error: accessError } = await supabase
+    .from("activityhub_access")
+    .select("access_scope")
+    .eq("user_id", session.user.id)
+    .maybeSingle();
+  if (accessError || !access) throw new Error("Impossibile verificare l’ambito di accesso.");
+  const scope = String(access.access_scope || "");
+  if (scope !== "all" && scope !== "DEV") throw new Error("Ambito di accesso non valido.");
+  if (scope === "DEV" && filename !== "activity-logs.json.gz") {
+    throw new Error("Questo account può consultare solo i dati attività del gruppo DEV.");
+  }
+  const path = scope === "DEV" ? `DEV/${filename}` : filename;
+  const { data, error } = await supabase.storage.from("activityhub-data").download(path);
   if (error) throw new Error(`Download dati protetti non riuscito: ${error.message}`);
   if (typeof DecompressionStream === "undefined") throw new Error("Il browser non supporta la decompressione dei dati.");
   const stream = data.stream().pipeThrough(new DecompressionStream("gzip"));
