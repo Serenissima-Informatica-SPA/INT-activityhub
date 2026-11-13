@@ -23,9 +23,19 @@ I primi quattro puntano a `jobs_complete.parquet` e `resources.json`; i due secr
 
 I secret `CRM_SQL_*` e `NAV_SQL_*` non sono necessari per la sincronizzazione attuale, che legge i dati già esportati nei Parquet.
 
-Per evitare che il workflow pubblichi dati prima che l'accesso sia ristretto, il deploy è bloccato finché la variabile repository `ACTIVITYHUB_PRIVATE_PAGES=true` non viene impostata dopo aver configurato GitHub Pages come privata. La pianificazione ogni 5 minuti si abilita con `ACTIVITYHUB_DATA_SYNC_ENABLED=true`.
+Il frontend GitHub Pages è pubblico, ma richiede l'accesso con un account abilitato. Gli export sono caricati nel bucket privato Supabase e rimossi dalla cartella pubblica prima della build. Il secret `SUPABASE_SERVICE_ROLE_KEY` è usato solo dal workflow e non deve essere inserito nel codice frontend.
 
-Il workflow pubblica i file compilati nel branch `gh-pages`. In **Settings → Pages**, seleziona **Deploy from a branch**, branch `gh-pages` e cartella `/(root)`; lascia la visibilità su privata e usa l'URL `Visit site` mostrato in quella pagina. Una repository privata non rende privato un sito GitHub Pages. La pubblicazione privata di Pages richiede GitHub Enterprise Cloud e limita l'accesso a chi può leggere il repository.
+Aggiungi in **Settings → Secrets and variables → Actions → Secrets**:
+
+- `SUPABASE_URL`
+- `SUPABASE_PUBLISHABLE_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+
+Dopo aver configurato i tre secrets, disabilitato le registrazioni pubbliche in Supabase e abilitato gli utenti autorizzati, imposta la variabile repository `ACTIVITYHUB_AUTH_READY=true`. Il workflow **Sync Jobs (Azure Blob)** si avvia ogni cinque minuti; per il primo avvio, eseguilo manualmente da **Actions → Sync Jobs (Azure Blob) → Run workflow**.
+
+In **Settings → Pages**, seleziona **Deploy from a branch**, branch `gh-pages` e cartella `/(root)`. Il sito resta pubblico: l'accesso ai dati è controllato da Supabase Auth e dalle policy del bucket privato.
+
+Per i dettagli di configurazione login, utenti autorizzati e policy, consulta [supabase/README.md](supabase/README.md).
 
 ## Sviluppo
 
