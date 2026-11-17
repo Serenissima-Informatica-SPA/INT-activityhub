@@ -234,7 +234,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
             </table></div>}
         </section>
       </div>
-      <footer className="revenue-footnote">Le ore valorizzate provengono dal dettaglio CRM per singola attività. Il dato include le quantità fatturabili e la durata ZDT quando non esiste un’attività CRM collegata; ToBill falso vale zero. La stima non è un importo fatturato.</footer>
+      <footer className="revenue-footnote">Ore loggate = durata registrata in ZDT. Ore valorizzate = quantità fatturabile CRM (ToBill deve essere attivo; se manca un’attività CRM collegata si usa la durata ZDT) × tariffa NAV: perciò possono essere diverse dalle ore loggate o confermate. Le attività ZDT “Schedulata” sono nel previsto, non nell’effettivo. La stima non è un importo fatturato.</footer>
     </section>
   );
 }
