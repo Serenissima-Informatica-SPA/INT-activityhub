@@ -229,14 +229,20 @@ export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: Te
   const plannedDetails = useMemo(() => {
     const grouped = new Map<string, JobDetail>();
     const canceledStates = new Set(["cancellata", "canceled", "cancelled", "annullata"]);
-    const sourceRows = records.filter((row) => toDay(row.Data) > todayKey);
-    sourceRows.forEach((row) => {
+    records.forEach((row) => {
       if (normalize(String(row.Componente ?? "").trim()) !== normalize(selectedPerson)) return;
       const day = toDay(row.Data);
       const state = normalize(String(row["Stato Attivita"] ?? ""));
       const canceled = canceledStates.has(state);
-      if (!day || !day.startsWith(monthPrefix) || !isWorkday(day) || canceled || day <= todayKey) return;
-      const planned = Math.max(toHours(row["Ore Loggate"] ?? row.Ore), 0);
+      if (!day || !day.startsWith(monthPrefix) || canceled) return;
+      const logged = Math.max(toHours(row["Ore Loggate"] ?? row.Ore), 0);
+      const confirmed = Math.max(toHours(row["Ore Confermate"]), 0);
+      const unconfirmed = row["Ore Non Confermate"] == null
+        ? Math.max(logged - confirmed, 0)
+        : Math.max(toHours(row["Ore Non Confermate"]), 0);
+      const planned = day > todayKey
+        ? (isWorkday(day) ? logged : 0)
+        : unconfirmed;
       if (!planned) return;
       const code = String(row["Codice commessa"] ?? "").trim();
       const name = String(row["Nome commessa"] ?? "").trim();
@@ -250,7 +256,7 @@ export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: Te
       grouped.set(key, current);
     });
     return [...grouped.values()].sort((a, b) => (b.planned || 0) - (a.planned || 0) || a.code.localeCompare(b.code, "it"));
-  }, [records, revenueRecords, selectedPerson, monthPrefix, todayKey]);
+  }, [records, selectedPerson, monthPrefix, todayKey]);
   const coigDetails = jobDetails.filter((item) => item.kind === "COIG");
   const otherDetails = jobDetails.filter((item) => item.kind === "Non COIG");
   const coigPlannedDetails = plannedDetails.filter((item) => item.kind === "COIG");
