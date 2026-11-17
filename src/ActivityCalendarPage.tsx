@@ -229,7 +229,7 @@ export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: Te
   const plannedDetails = useMemo(() => {
     const grouped = new Map<string, JobDetail>();
     const canceledStates = new Set(["cancellata", "canceled", "cancelled", "annullata"]);
-    const sourceRows = revenueRecords.length ? revenueRecords : records.filter((row) => toDay(row.Data) > todayKey);
+    const sourceRows = records.filter((row) => toDay(row.Data) > todayKey);
     sourceRows.forEach((row) => {
       if (normalize(String(row.Componente ?? "").trim()) !== normalize(selectedPerson)) return;
       const day = toDay(row.Data);
