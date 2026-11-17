@@ -20,6 +20,7 @@ type RevenueLine = {
   state: string;
   crmActivityId: string;
   forecast: boolean;
+  category: string;
 };
 
 function norm(value: unknown) {
@@ -104,7 +105,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       "Categoria valorizzazione": "Effettivo",
       "Stima fatturato": revenue,
       "Stima fatturato confermato": revenue,
-      "Fonte ore stima": "Ore confermate ZDT × tariffa NAV",
+      "Fonte ore stima": "Quota confermata · Enable Invoice o ZDT × tariffa NAV",
       "Esito valorizzazione": price > 0 ? "Valorizzata" : String(row["Esito valorizzazione"] ?? "Tariffa NAV non disponibile"),
       "ToBill CRM": null
     }];
@@ -125,7 +126,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       "Categoria valorizzazione": "Pianificato",
       "Stima fatturato": revenue,
       "Stima fatturato confermato": 0,
-      "Fonte ore stima": "Ore pianificate ZDT × tariffa NAV",
+      "Fonte ore stima": "Pianificate · Enable Invoice o ZDT × tariffa NAV",
       "Esito valorizzazione": price > 0 ? "Valorizzata" : String(row["Esito valorizzazione"] ?? "Tariffa NAV non disponibile"),
       "ToBill CRM": null
     }];
@@ -147,7 +148,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       "Categoria valorizzazione": "Da confermare",
       "Stima fatturato": revenue,
       "Stima fatturato confermato": 0,
-      "Fonte ore stima": "Ore ZDT non confermate × tariffa NAV",
+      "Fonte ore stima": "Non confermate · Enable Invoice o ZDT × tariffa NAV",
       "Esito valorizzazione": price > 0 ? "Valorizzata" : String(row["Esito valorizzazione"] ?? "Tariffa NAV non disponibile"),
       "ToBill CRM": null
     }];
@@ -171,12 +172,13 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       const state = String(row["Stato Attivita"] ?? "").trim();
       const crmActivityId = String(row["CRM Activity ID"] ?? "").trim();
       const logged = hours(row["Ore Loggate"] ?? row.Ore);
-      const forecast = row["Categoria valorizzazione"] !== "Effettivo";
-      const key = [customer, code, job, activity, match, source, String(toBill), state, crmActivityId, String(forecast)].join("|");
+      const category = String(row["Categoria valorizzazione"] ?? "Effettivo");
+      const forecast = category !== "Effettivo";
+      const key = [customer, code, job, activity, match, source, String(toBill), state, crmActivityId, category].join("|");
       const current = grouped.get(key) || {
         customer, code, job, activity, logged: 0, confirmed: 0, billable: 0,
         unitPrice: number(row["Prezzo unitario NAV"]),
-        revenue: 0, match, source, kind, toBill, state, crmActivityId, forecast
+        revenue: 0, match, source, kind, toBill, state, crmActivityId, forecast, category
       };
       current.logged += logged;
       current.confirmed += hours(row["Ore Confermate"]);
@@ -317,11 +319,11 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
           <div className="revenue-section-heading"><div><h3>Dettaglio commesse</h3><p>Valorizzazione delle ore per commessa e attività</p></div><span>{lines.length} voci</span></div>
           {lines.length === 0 ? <p className="revenue-empty">Non risultano attività registrate nel periodo selezionato.</p> :
             <div className="revenue-table-wrap"><table>
-              <thead><tr><th>Esito</th><th>Cliente</th><th>Commessa / attività</th><th>Stato ZDT</th><th>ID CRM</th><th>Ore loggate</th><th>Ore confermate</th><th>ToBill CRM</th><th>Ore valorizzate</th><th>Tariffa NAV</th><th>Stima</th></tr></thead>
+              <thead><tr><th>Esito</th><th>Cliente</th><th>Commessa / attività</th><th>Tipo</th><th>Stato ZDT</th><th>ID CRM</th><th>Ore loggate</th><th>Ore confermate</th><th>ToBill CRM</th><th>Ore valorizzate</th><th>Tariffa NAV</th><th>Stima</th></tr></thead>
               <tbody>{lines.map((line, index) => <tr key={`${line.customer}|${line.code}|${line.activity}|${index}`} className={line.match === "Valorizzata" ? "" : "revenue-unresolved"}>
                 <td><span className={line.match === "Valorizzata" ? "revenue-badge" : "revenue-badge unresolved"}>{line.match}</span>{line.source !== "—" && <small className="revenue-source">{line.source}</small>}</td>
                 <td>{line.customer}</td><td><strong>{line.code || "—"}</strong><small>{[line.job, line.activity].filter(Boolean).join(" · ")}</small></td>
-                <td>{line.state || "—"}</td><td>{line.crmActivityId || "—"}</td><td>{fmt(line.logged)} h</td><td>{fmt(line.confirmed)} h</td><td>{line.toBill === null ? "—" : line.toBill ? "Sì" : "No"}</td><td>{fmt(line.billable)} h</td><td>{line.match === "Valorizzata" ? eur(line.unitPrice) : "—"}</td><td><strong>{line.match === "Valorizzata" ? eur(line.revenue) : "—"}</strong></td>
+                <td><span className={line.forecast ? "revenue-badge forecast" : "revenue-badge"}>{line.category}</span></td><td>{line.state || "—"}</td><td>{line.crmActivityId || "—"}</td><td>{fmt(line.logged)} h</td><td>{fmt(line.confirmed)} h</td><td>{line.toBill === null ? "—" : line.toBill ? "Sì" : "No"}</td><td>{fmt(line.billable)} h</td><td>{line.match === "Valorizzata" ? eur(line.unitPrice) : "—"}</td><td><strong>{line.match === "Valorizzata" ? eur(line.revenue) : "—"}</strong></td>
               </tr>)}</tbody>
             </table></div>}
         </section>
