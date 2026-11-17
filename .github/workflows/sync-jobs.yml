@@ -1,5 +1,9 @@
 name: Sync Jobs (Azure Blob)
 
+concurrency:
+  group: activityhub-sync-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
 
