@@ -225,7 +225,6 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
   }, [financialRecords, person, resolvedGroup, resolvedGroupMembers, monthPrefix, todayKey]);
 
   const actualLines = lines.filter((line) => !line.forecast);
-  const forecastLines = lines.filter((line) => line.forecast);
   const totals = actualLines.reduce((sum, line) => ({
     logged: sum.logged + line.logged,
     billable: sum.billable + line.billable,
