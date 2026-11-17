@@ -443,6 +443,7 @@ def main():
     confirmed_billable_by_activity = {}
     revenue_groups = {}
     allowed_people = {normalize(name) for name in TEAM_MEMBERS}
+    valuation_today_key = pd.Timestamp.now(tz="Europe/Rome").date().isoformat()
     for _, detail in detail_frame.iterrows():
         day = detail_day(detail.get(detail_date))
         person_raw = canonical_person(text_value(detail.get(detail_person)))
@@ -459,8 +460,7 @@ def main():
         is_confirmed = detail_is_confirmed(detail)
         to_bill_flag = as_bool(detail.get(detail_to_bill)) if detail_to_bill else None
         logged_minutes = max(numeric(detail.get(detail_zdt_minutes)) or 0.0, 0.0) if detail_zdt_minutes else 0.0
-        italy_today = pd.Timestamp.now(tz="Europe/Rome").date().isoformat()
-        is_future = bool(day and day > italy_today)
+        is_future = bool(day and day > valuation_today_key)
         canceled = state_key in {"cancellata", "cancelled", "canceled", "annullata"}
         if canceled or (detail_to_bill and not to_bill_flag):
             billable_hours = 0.0
@@ -529,7 +529,7 @@ def main():
             "Stima fatturato da confermare": max(item["billable"] - item["confirmed_billable"], 0.0) * price,
             "Fonte ore stima": (
                 "Ore confermate ZDT" if item["confirmed_logged"] > 0
-                else ("Ore Fatturabili CRM per attività" if item["date"] > pd.Timestamp.now(tz="Europe/Rome").date().isoformat() else "Ore non confermate ZDT · escluse")
+                else ("Ore Fatturabili CRM per attività" if item["date"] > valuation_today_key else "Ore non confermate ZDT · escluse")
             ), "Esito valorizzazione": status,
         })
 
