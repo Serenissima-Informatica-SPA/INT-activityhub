@@ -70,12 +70,40 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
     const signature = [day, norm(row.Componente), norm(row["Codice commessa"]), norm(row["Dettaglio attività"])].join("|");
     return !sidecarSignatures.has(signature);
   });
+  // Recupera la tariffa NAV dal dettaglio economico anche quando il riepilogo
+  // giornaliero non ha ereditato il prezzo dalla riga CRM/NAV.
+  const pricesByJobKey = new Map<string, Set<number>>();
+  const pricesByJob = new Map<string, Set<number>>();
+  revenueRecords.forEach((row) => {
+    const price = number(row["Prezzo unitario NAV"]);
+    if (price <= 0) return;
+    const job = norm(row["Codice commessa"]);
+    const exactKey = [job, norm(row["Codice task"]), norm(row["Numero riga commessa"])].join("|");
+    if (job) {
+      if (!pricesByJob.has(job)) pricesByJob.set(job, new Set());
+      pricesByJob.get(job)!.add(price);
+    }
+    if (job && exactKey !== "||") {
+      if (!pricesByJobKey.has(exactKey)) pricesByJobKey.set(exactKey, new Set());
+      pricesByJobKey.get(exactKey)!.add(price);
+    }
+  });
+  const confirmedNavPrice = (row: Row) => {
+    const ownPrice = Math.max(number(row["Prezzo unitario NAV"]), 0);
+    if (ownPrice > 0) return ownPrice;
+    const job = norm(row["Codice commessa"]);
+    const exactKey = [job, norm(row["Codice task"]), norm(row["Numero riga commessa"])].join("|");
+    const exactPrices = pricesByJobKey.get(exactKey);
+    if (exactPrices?.size === 1) return [...exactPrices][0];
+    const jobPrices = pricesByJob.get(job);
+    return jobPrices?.size === 1 ? [...jobPrices][0] : 0;
+  };
   // L'effettivo usa il riepilogo giornaliero: ore confermate ZDT × tariffa NAV.
   // Il dettaglio CRM resta la fonte delle attività pianificate future.
   const confirmedActuals = records.flatMap((row) => {
     const day = String(row.Data ?? "").slice(0, 10);
     const confirmed = Math.max(hours(row["Ore Confermate"]), 0);
-    const price = Math.max(number(row["Prezzo unitario NAV"]), 0);
+    const price = confirmedNavPrice(row);
     if (!day || day > todayKey || confirmed <= 0 || isCanceledRow(row)) return [];
     const revenue = confirmed * price;
     return [{
