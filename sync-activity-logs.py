@@ -483,9 +483,9 @@ def main():
         logged_minutes = max(numeric(detail.get(detail_zdt_minutes)) or 0.0, 0.0) if detail_zdt_minutes else 0.0
         canceled = state_key in {"cancellata", "cancelled", "canceled", "annullata"}
         has_invoice_quantity = detail_has_invoice_quantity(detail)
-        if canceled or to_bill_flag is False:
+        if canceled:
             billable_hours = 0.0
-            billable_source = "Non fatturabile CRM"
+            billable_source = "Attività ZDT cancellata"
         elif to_bill_flag is True and has_invoice_quantity:
             billable_hours = detail_hours(detail)
             billable_source = "Ore Enable Invoice CRM"
