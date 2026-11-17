@@ -21,6 +21,7 @@ type RevenueLine = {
   crmActivityId: string;
   forecast: boolean;
   category: string;
+  navDiagnostic: string;
 };
 
 function norm(value: unknown) {
@@ -165,6 +166,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       const activity = String(row["Dettaglio attività"] ?? "").trim();
       const customer = String(row.Cliente ?? "").trim() || "Cliente non disponibile";
       const match = String(row["Esito valorizzazione"] ?? "Dati di valorizzazione non disponibili");
+      const navDiagnostic = String(row["Dettaglio tariffa NAV"] ?? "");
       const source = String(row["Fonte ore stima"] ?? "—");
       const kind = String(row["Tipo attività"] ?? "").toUpperCase();
       const rawToBill = row["ToBill CRM"];
@@ -174,11 +176,11 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       const logged = hours(row["Ore Loggate"] ?? row.Ore);
       const category = String(row["Categoria valorizzazione"] ?? "Effettivo");
       const forecast = category !== "Effettivo";
-      const key = [customer, code, job, activity, match, source, String(toBill), state, crmActivityId, category].join("|");
+      const key = [customer, code, job, activity, match, source, navDiagnostic, String(toBill), state, crmActivityId, category].join("|");
       const current = grouped.get(key) || {
         customer, code, job, activity, logged: 0, confirmed: 0, billable: 0,
         unitPrice: number(row["Prezzo unitario NAV"]),
-        revenue: 0, match, source, kind, toBill, state, crmActivityId, forecast, category
+        revenue: 0, match, source, kind, toBill, state, crmActivityId, forecast, category, navDiagnostic
       };
       current.logged += logged;
       current.confirmed += hours(row["Ore Confermate"]);
@@ -321,7 +323,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
             <div className="revenue-table-wrap"><table>
               <thead><tr><th>Esito</th><th>Cliente</th><th>Commessa / attività</th><th>Tipo</th><th>Stato ZDT</th><th>ID CRM</th><th>Ore loggate</th><th>Ore confermate</th><th>ToBill CRM</th><th>Ore valorizzate</th><th>Tariffa NAV</th><th>Stima</th></tr></thead>
               <tbody>{lines.map((line, index) => <tr key={`${line.customer}|${line.code}|${line.activity}|${index}`} className={line.match === "Valorizzata" ? "" : "revenue-unresolved"}>
-                <td><span className={line.match === "Valorizzata" ? "revenue-badge" : "revenue-badge unresolved"}>{line.match}</span>{line.source !== "—" && <small className="revenue-source">{line.source}</small>}</td>
+                <td><span className={line.match === "Valorizzata" ? "revenue-badge" : "revenue-badge unresolved"}>{line.match}</span>{line.source !== "—" && <small className="revenue-source">{line.source}</small>}{line.navDiagnostic && line.match !== "Valorizzata" && <small className="revenue-source">{line.navDiagnostic}</small>}</td>
                 <td>{line.customer}</td><td><strong>{line.code || "—"}</strong><small>{[line.job, line.activity].filter(Boolean).join(" · ")}</small></td>
                 <td><span className={line.forecast ? "revenue-badge forecast" : "revenue-badge"}>{line.category}</span></td><td>{line.state || "—"}</td><td>{line.crmActivityId || "—"}</td><td>{fmt(line.logged)} h</td><td>{fmt(line.confirmed)} h</td><td>{line.toBill === null ? "—" : line.toBill ? "Sì" : "No"}</td><td>{fmt(line.billable)} h</td><td>{line.match === "Valorizzata" ? eur(line.unitPrice) : "—"}</td><td><strong>{line.match === "Valorizzata" ? eur(line.revenue) : "—"}</strong></td>
               </tr>)}</tbody>
