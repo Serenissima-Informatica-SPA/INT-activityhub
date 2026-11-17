@@ -323,6 +323,8 @@ def main():
     if not detail_logged_hours:
         raise ValueError("Il dettaglio ZDT non contiene le ore loggate necessarie al calendario")
 
+    # Raggruppa sul livello comune ai due feed: giorno, persona e commessa/task/riga.
+    # Le descrizioni possono differire fra il riepilogo giornaliero e il dettaglio.
     detail_totals_by_activity = {}
     for _, detail in detail_frame.iterrows():
         key = (
@@ -331,10 +333,8 @@ def main():
             normalize_code(detail.get(detail_job)),
             normalize_code(detail.get(detail_task)),
             normalize_code(detail.get(detail_plan)),
-            normalize(detail.get(detail_job_name, "") if detail_job_name else ""),
-            normalize(detail.get(detail_activity_name, "") if detail_activity_name else ""),
         )
-        if not all(key[:5]):
+        if not all(key):
             continue
         logged = max(numeric(detail.get(detail_logged_hours)) or 0.0, 0.0)
         if detail_confirmed:
@@ -346,7 +346,7 @@ def main():
         totals[0] += logged
         totals[1] += confirmed
 
-    detail_matched_calendar_rows = 0
+    calendar_rows_by_activity = {}
     for index, row in daily.iterrows():
         key = (
             detail_day(row.get(date_field)),
@@ -354,19 +354,48 @@ def main():
             normalize_code(row.get("Codice commessa")),
             normalize_code(row.get("Codice task")),
             normalize_code(row.get("Numero riga commessa")),
-            normalize(row.get("Nome commessa", "")),
-            normalize(row.get("Dettaglio attività", "")),
         )
+        if all(key):
+            calendar_rows_by_activity.setdefault(key, []).append(index)
+
+    detail_matched_calendar_rows = 0
+    detail_matched_activities = 0
+    for key, indexes in calendar_rows_by_activity.items():
         totals = detail_totals_by_activity.get(key)
         if totals is None:
             continue
-        logged, confirmed = totals
-        daily.at[index, "Ore Loggate"] = logged
-        daily.at[index, "Ore Confermate"] = confirmed
-        daily.at[index, "Ore Non Confermate"] = max(logged - confirmed, 0.0)
-        detail_matched_calendar_rows += 1
+        detail_logged, detail_confirmed_total = totals
+        original_hours = [
+            max(numeric(daily.at[index, "Ore Loggate"]) or 0.0, 0.0)
+            for index in indexes
+        ]
+        weight_total = sum(original_hours)
+        if weight_total:
+            weights = [hours / weight_total for hours in original_hours]
+        else:
+            weights = [1 / len(indexes)] * len(indexes)
 
-    print(f"Righe calendario riallineate al dettaglio ZDT: {detail_matched_calendar_rows}/{len(daily)}")
+        assigned_logged = assigned_confirmed = 0.0
+        for position, (index, weight) in enumerate(zip(indexes, weights)):
+            is_last = position == len(indexes) - 1
+            logged = detail_logged - assigned_logged if is_last else detail_logged * weight
+            confirmed = detail_confirmed_total - assigned_confirmed if is_last else detail_confirmed_total * weight
+            confirmed = min(max(confirmed, 0.0), logged)
+            daily.at[index, "Ore Loggate"] = logged
+            daily.at[index, "Ore Confermate"] = confirmed
+            daily.at[index, "Ore Non Confermate"] = max(logged - confirmed, 0.0)
+            assigned_logged += logged
+            assigned_confirmed += confirmed
+            detail_matched_calendar_rows += 1
+        detail_matched_activities += 1
+
+    if daily.empty or detail_matched_calendar_rows == 0:
+        raise ValueError("Nessuna riga del calendario abbinata alle ore del dettaglio ZDT")
+    print(
+        f"Righe calendario riallineate al dettaglio ZDT: "
+        f"{detail_matched_calendar_rows}/{len(daily)}; "
+        f"attività abbinate: {detail_matched_activities}/{len(calendar_rows_by_activity)}"
+    )
 
     def detail_hours(row):
         if detail_billable:
