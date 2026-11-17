@@ -273,6 +273,13 @@ def main():
         enabled = any(as_bool(item.get("Enable Invoicing")) for item in candidates)
         return {"price": price, "crm_logged": logged, "invoice_hours": invoice_hours, "enabled": enabled}, "Valorizzata"
 
+    status_counts = {}
+    for revenue_row in revenue_records:
+        outcome = revenue_row["Esito valorizzazione"]
+        status_counts[outcome] = status_counts.get(outcome, 0) + 1
+    print(f"Dettagli CRM valorizzati con tariffa NAV: {status_counts.get('Valorizzata', 0)}/{len(revenue_records)}")
+    print(f"Esiti NAV aggregati: {status_counts}")
+
     daily["Prezzo unitario NAV"] = 0.0
     daily["Ore valorizzate"] = 0.0
     daily["Stima fatturato"] = 0.0
