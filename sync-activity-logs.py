@@ -484,6 +484,9 @@ def main():
                 item["confirmed_billable"] += billable_hours
                 item["confirmed_logged"] += logged_minutes / 60.0
 
+    if detail_zdt_state:
+        state_counts = detail_frame[detail_zdt_state].fillna("(vuoto)").astype(str).value_counts().head(12).to_dict()
+        print(f"Distribuzione aggregata degli stati ZDT: {state_counts}")
     revenue_records = []
     for item in revenue_groups.values():
         nav_row = {
