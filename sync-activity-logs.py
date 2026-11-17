@@ -452,7 +452,9 @@ def main():
         task_code = (text_value(detail.get(detail_crm_task)) if detail_crm_task else "") or base_task
         plan_code = (text_value(detail.get(detail_crm_plan)) if detail_crm_plan else "") or base_plan
         base_key = (day, person_key, normalize_code(base_job), normalize_code(base_task), normalize_code(base_plan))
-        billable_hours = detail_hours(detail)
+        state_label = text_value(detail.get(detail_zdt_state)) if detail_zdt_state else ""
+        state_key = normalize(state_label)
+        billable_hours = 0.0 if state_key in {"cancellata", "cancelled", "canceled", "annullata"} else detail_hours(detail)
         is_confirmed = detail_is_confirmed(detail)
         if all(base_key):
             billable_by_activity[base_key] = billable_by_activity.get(base_key, 0.0) + billable_hours
@@ -469,12 +471,12 @@ def main():
             customer = customer_by_job.get(normalize(job_code), "") or customer_by_job.get(normalize(base_job), "")
             activity_key = (
                 day, person_key, normalize_code(job_code), normalize_code(task_code), normalize_code(plan_code),
-                normalize(job_description), normalize(activity_description),
+                normalize(job_description), normalize(activity_description), state_key,
             )
             item = revenue_groups.setdefault(activity_key, {
                 "date": day, "person": person_raw, "job_code": job_code, "task_code": task_code,
                 "plan_code": plan_code, "job_name": job_description, "activity": activity_description,
-                "customer": customer, "logged": 0.0, "billable": 0.0, "confirmed_billable": 0.0,
+                "state": state_label, "customer": customer, "logged": 0.0, "billable": 0.0, "confirmed_billable": 0.0,
                 "confirmed_logged": 0.0,
             })
             logged_minutes = max(numeric(detail.get(detail_zdt_minutes)) or 0.0, 0.0) if detail_zdt_minutes else 0.0
@@ -501,6 +503,7 @@ def main():
             "Data": item["date"], "Componente": item["person"], "Codice commessa": code,
             "Codice task": item["task_code"], "Numero riga commessa": item["plan_code"],
             "Nome commessa": item["job_name"], "Dettaglio attività": item["activity"],
+            "Stato Attivita": item["state"],
             "Cliente": item["customer"], "Tipo attività": kind,
             "Ore Loggate": item["logged"], "Ore Confermate": item["confirmed_logged"],
             "Ore valorizzate": item["billable"], "Ore valorizzate confermate": item["confirmed_billable"],

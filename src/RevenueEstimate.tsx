@@ -32,6 +32,15 @@ function hours(value: unknown) {
 }
 const fmt = (value: number) => value.toLocaleString("it-IT", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const eur = (value: number) => value.toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
+const PLANNED_STATES = new Set(["schedulata", "scheduled", "pianificata", "planned"]);
+const CANCELED_STATES = new Set(["cancellata", "canceled", "cancelled", "annullata"]);
+function isPlannedRow(row: Row, todayKey: string) {
+  const day = String(row.Data ?? "").slice(0, 10);
+  return day > todayKey || PLANNED_STATES.has(norm(row["Stato Attivita"]));
+}
+function isCanceledRow(row: Row) {
+  return CANCELED_STATES.has(norm(row["Stato Attivita"]));
+}
 
 export default function RevenueEstimate({ records, revenueRecords = [], person, group, groupMembers, monthPrefix, todayKey }: {
   records: Row[];
@@ -64,7 +73,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
     financialRecords.forEach((row) => {
       if (norm(row.Componente) !== norm(person)) return;
       const day = String(row.Data ?? "").slice(0, 10);
-      if (!day.startsWith(monthPrefix) || day > todayKey) return;
+      if (!day.startsWith(monthPrefix) || isPlannedRow(row, todayKey) || isCanceledRow(row)) return;
       const code = String(row["Codice commessa"] ?? "").trim();
       const job = String(row["Nome commessa"] ?? "").trim();
       const activity = String(row["Dettaglio attività"] ?? "").trim();
@@ -104,7 +113,8 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       const billableHours = hours(row["Ore valorizzate"]);
       const price = number(row["Prezzo unitario NAV"]);
       const revenue = number(row["Stima fatturato"]) || billableHours * price;
-      const bucket = day > todayKey
+      if (isCanceledRow(row)) return;
+      const bucket = isPlannedRow(row, todayKey)
         ? { effective: 0, planned: revenue }
         : { effective: revenue, planned: 0 };
       const add = (target: typeof personYear) => {
@@ -143,7 +153,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
     financialRecords.forEach((row) => {
       if (norm(row.Componente) !== norm(person)) return;
       const day = String(row.Data ?? "").slice(0, 10);
-      if (!day.startsWith(monthPrefix) || day <= todayKey) return;
+      if (!day.startsWith(monthPrefix) || !isPlannedRow(row, todayKey) || isCanceledRow(row)) return;
       const billableHours = Math.max(hours(row["Ore valorizzate"]), 0);
       if (billableHours <= 0) return;
       const customer = String(row.Cliente ?? "").trim() || "Cliente non disponibile";
