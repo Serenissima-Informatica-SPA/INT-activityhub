@@ -226,6 +226,10 @@ def main():
     detail_columns = [*detail_fields.keys(), "Cliente", "Tipo attività"]
     group_columns = [date_field, person_field, *detail_columns]
     daily = daily.groupby(group_columns, as_index=False, dropna=True)[sum_columns].sum()
+    for diagnostic_column in ("Data", person_field, "Codice commessa", "Codice task", "Numero riga commessa", "Nome commessa", "Dettaglio attività"):
+        if diagnostic_column in daily.columns:
+            populated = daily[diagnostic_column].fillna("").astype(str).str.strip().ne("").sum()
+            print(f"Righe giornaliere con {diagnostic_column} valorizzato: {int(populated)}/{len(daily)}")
 
     # Collega ogni riga ZDT al dettaglio CRM/NAV tramite commessa, task e riga.
     jobs_path = Path("public/jobs.json")
