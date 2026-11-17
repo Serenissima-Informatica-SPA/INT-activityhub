@@ -9,9 +9,11 @@ from urllib.request import Request, urlopen
 
 FILES = {
     "activity-logs.json": "activity-logs.json.gz",
+    "activity-revenue.json": "activity-revenue.json.gz",
     "jobs.json": "jobs.json.gz",
     "resources.json": "resources.json.gz",
     "DEV/activity-logs.json": "DEV/activity-logs.json.gz",
+    "DEV/activity-revenue.json": "DEV/activity-revenue.json.gz",
 }
 DEV_MEMBERS = {
     "Albanese Lorenzo", "Brigo Matteo", "Brotto Fabio", "Cecchin Chiara",
@@ -48,6 +50,21 @@ def create_dev_activity_export():
     print(f"Creato export DEV: {len(dev_rows)} righe su {len(rows)} totali.")
 
 
+def create_dev_activity_revenue_export():
+    source = Path("public") / "activity-revenue.json"
+    rows = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(rows, list):
+        raise ValueError(f"{source} non contiene una lista valida.")
+    allowed = {normalize_name(name) for name in DEV_MEMBERS}
+    dev_rows = [row for row in rows if normalize_name(row.get("Componente", "")) in allowed]
+    if not dev_rows:
+        raise ValueError("Export economico DEV vuoto: nessun componente DEV corrisponde ai dati, upload interrotto.")
+    target = Path("public") / "DEV" / "activity-revenue.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(dev_rows, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(f"Creato export economico DEV: {len(dev_rows)} righe su {len(rows)} totali.")
+
+
 def main():
     base_url = os.environ.get("SUPABASE_URL", "").rstrip("/")
     service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
@@ -55,6 +72,7 @@ def main():
         raise RuntimeError("Impostare i secrets SUPABASE_URL e SUPABASE_SERVICE_ROLE_KEY.")
 
     create_dev_activity_export()
+    create_dev_activity_revenue_export()
     for source_name, target_name in FILES.items():
         source = Path("public") / source_name
         if not source.is_file():

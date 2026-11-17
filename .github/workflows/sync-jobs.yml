@@ -133,7 +133,7 @@ jobs:
       
       - name: Remove private source exports before build
         run: |
-          rm -f public/activity-logs.json public/jobs.json public/resources.json public/DEV/activity-logs.json
+          rm -f public/activity-logs.json public/activity-revenue.json public/jobs.json public/resources.json public/DEV/activity-logs.json public/DEV/activity-revenue.json
           rmdir public/DEV 2>/dev/null || true
       
       - name: Build application

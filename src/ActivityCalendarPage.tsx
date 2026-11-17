@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { getActivityLogs } from "./api";
+import { getActivityLogs, getActivityRevenue } from "./api";
 import RevenueEstimate from "./RevenueEstimate";
 import { TEAM_MEMBERS, type TeamGroup } from "./teamMembers";
 import "./ActivityCalendarPage.css";
@@ -101,6 +101,7 @@ function formatDay(dayKey: string) {
 
 export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: TeamGroup } = {}) {
   const [records, setRecords] = useState<Row[]>([]);
+  const [revenueRecords, setRevenueRecords] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => new Date());
@@ -111,7 +112,11 @@ export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: Te
 
   async function refresh() {
     setLoading(true); setError("");
-    try { setRecords(await getActivityLogs()); }
+    try {
+      const [activityRows, revenueRows] = await Promise.all([getActivityLogs(), getActivityRevenue()]);
+      setRecords(activityRows);
+      setRevenueRecords(revenueRows);
+    }
     catch (reason) { setError(reason instanceof Error ? reason.message : "Errore nel caricamento delle consuntivazioni"); }
     finally { setLoading(false); }
   }
@@ -410,7 +415,7 @@ export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: Te
           <article><span>Alert aperti</span><strong className={alerts.length ? "activity-red" : "activity-green"}>{alerts.length}</strong><small>Dal 1° novembre 2026 · {below} giornate sotto 8h</small></article>
         </section>
 
-        <RevenueEstimate records={records} person={selectedPerson} group={group} groupMembers={people} monthPrefix={monthPrefix} todayKey={todayKey} />
+        <RevenueEstimate records={records} revenueRecords={revenueRecords} person={selectedPerson} group={group} groupMembers={people} monthPrefix={monthPrefix} todayKey={todayKey} />
 
         <section className="activity-report">
           <header><div><h2>Report settimanale</h2><p>{selectedPerson} · {monthName} · consuntivi dei giorni conclusi; piani successivi a oggi</p></div><span>Obiettivo giornaliero: 8h</span></header>

@@ -52,6 +52,17 @@ def normalize(value):
     return "".join(char for char in decomposed if char.isalnum() and not unicodedata.combining(char))
 
 
+def text_value(value):
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except (TypeError, ValueError):
+        pass
+    return str(value).strip()
+
+
 # Alias di anagrafica: le righe ZDT possono invertire nome/cognome o omettere il secondo nome.
 PERSON_ALIASES = {
     "federicorosina": "Rosina Federico",
@@ -71,7 +82,9 @@ def normalize_person(value):
 
 
 def normalize_code(value):
-    text = str(value or "").strip()
+    text = text_value(value)
+    if not text:
+        return ""
     try:
         numeric_value = float(text.replace(",", "."))
         if numeric_value.is_integer():
@@ -226,11 +239,6 @@ def main():
     detail_columns = [*detail_fields.keys(), "Cliente", "Tipo attività"]
     group_columns = [date_field, person_field, *detail_columns]
     daily = daily.groupby(group_columns, as_index=False, dropna=True)[sum_columns].sum()
-    for diagnostic_column in ("Data", person_field, "Codice commessa", "Codice task", "Numero riga commessa", "Nome commessa", "Dettaglio attività"):
-        if diagnostic_column in daily.columns:
-            populated = daily[diagnostic_column].fillna("").astype(str).str.strip().ne("").sum()
-            print(f"Righe giornaliere con {diagnostic_column} valorizzato: {int(populated)}/{len(daily)}")
-
     # Collega ogni riga ZDT al dettaglio CRM/NAV tramite commessa, task e riga.
     jobs_path = Path("public/jobs.json")
     jobs = json.loads(jobs_path.read_text(encoding="utf-8")) if jobs_path.exists() else []
@@ -331,37 +339,23 @@ def main():
         (column for column in detail_frame.columns if normalize(column) == "colorestatozdt"),
         None,
     )
+    detail_crm_job = next((column for column in detail_frame.columns if normalize(column) == "crmcommessa"), None)
+    detail_crm_task = next((column for column in detail_frame.columns if normalize(column) == "crmtask"), None)
+    detail_crm_plan = next((column for column in detail_frame.columns if normalize(column) == "crmrigacommessa"), None)
+    detail_desc_task = next((column for column in detail_frame.columns if normalize(column) == "descrizionetask"), None)
+    detail_desc_plan = next((column for column in detail_frame.columns if normalize(column) == "descrizioneriga"), None)
+    detail_desc_job = next((column for column in detail_frame.columns if normalize(column) == "descrizionecommessa"), None)
     if not detail_zdt_state and not detail_zdt_color and not detail_confirmed:
         raise ValueError("Il dettaglio ZDT non contiene stato, colore o flag di conferma")
 
-    # Diagnostica anonima copertura join tra riepilogo e dettaglio; non stampa dati di persona/commessa.
-    diagnostic_detail_keys = set()
-    for _, diagnostic_row in detail_frame.iterrows():
-        diagnostic_key = (
-            detail_day(diagnostic_row.get(detail_date)),
-            normalize_person(diagnostic_row.get(detail_person, "")),
-            normalize_code(diagnostic_row.get(detail_job)),
-            normalize_code(diagnostic_row.get(detail_task)),
-            normalize_code(diagnostic_row.get(detail_plan)),
-        )
-        if all(diagnostic_key):
-            diagnostic_detail_keys.add(diagnostic_key)
-    diagnostic_calendar_keys = set()
-    for _, diagnostic_row in daily.iterrows():
-        diagnostic_key = (
-            detail_day(diagnostic_row.get(date_field)),
-            normalize_person(diagnostic_row.get(person_field, "")),
-            normalize_code(diagnostic_row.get("Codice commessa")),
-            normalize_code(diagnostic_row.get("Codice task")),
-            normalize_code(diagnostic_row.get("Numero riga commessa")),
-        )
-        if all(diagnostic_key):
-            diagnostic_calendar_keys.add(diagnostic_key)
-    print(f"Righe dettaglio CRM/ZDT: {len(detail_frame)}; chiavi complete: {len(diagnostic_detail_keys)}; chiavi calendario: {len(diagnostic_calendar_keys)}")
-    for prefix_len in range(1, 6):
-        detail_prefixes = {key[:prefix_len] for key in diagnostic_detail_keys}
-        calendar_prefixes = {key[:prefix_len] for key in diagnostic_calendar_keys}
-        print(f"Copertura join per prime {prefix_len} chiavi: {len(detail_prefixes & calendar_prefixes)}/{len(calendar_prefixes)}")
+    def detail_is_confirmed(row):
+        state = normalize(text_value(row.get(detail_zdt_state))) if detail_zdt_state else ""
+        color = normalize(text_value(row.get(detail_zdt_color)).lower()) if detail_zdt_color else ""
+        if state:
+            return state in {"completata", "completed"}
+        if color:
+            return any(token in color for token in ("green", "lime", "00ff00"))
+        return as_bool(row.get(detail_confirmed))
 
     # Allinea i due feed usando il livello comune: giorno, persona e commessa/task/riga.
     # Le descrizioni possono differire; non vanno usate come chiavi di join.
@@ -377,74 +371,12 @@ def main():
         if not all(key):
             continue
         minutes = max(numeric(detail.get(detail_zdt_minutes)) or 0.0, 0.0) if detail_zdt_minutes else 0.0
-        state = normalize(detail.get(detail_zdt_state, "")) if detail_zdt_state else ""
-        color_raw = str(detail.get(detail_zdt_color, "") or "").strip().lower() if detail_zdt_color else ""
-        color_token = normalize(color_raw)
-        if state:
-            is_confirmed = state in {"completata", "completed"}
-        elif color_token:
-            is_confirmed = any(token in color_token for token in ("green", "lime", "00ff00"))
-        else:
-            is_confirmed = as_bool(detail.get(detail_confirmed))
+        is_confirmed = detail_is_confirmed(detail)
         totals = detail_status_by_activity.setdefault(key, [0.0, 0.0, 0, 0])
         totals[0] += minutes
         totals[1] += minutes if is_confirmed else 0.0
         totals[2] += 1
         totals[3] += 1 if is_confirmed else 0
-
-    # Il riepilogo giornaliero recente non valorizza quasi mai Task/Riga.
-    # Recupera i codici dal dettaglio per descrizioni, solo se la corrispondenza è univoca.
-    detail_desc_task = next((column for column in detail_frame.columns if normalize(column) == "descrizionetask"), None)
-    detail_desc_plan = next((column for column in detail_frame.columns if normalize(column) == "descrizioneriga"), None)
-    detail_codes_by_description = {}
-    detail_codes_by_activity = {}
-    if detail_desc_task and detail_desc_plan:
-        for _, detail in detail_frame.iterrows():
-            day = detail_day(detail.get(detail_date))
-            person_key = normalize_person(detail.get(detail_person, ""))
-            job_key = normalize_code(detail.get(detail_job))
-            task_raw = str(detail.get(detail_task, "") or "").strip()
-            plan_raw = str(detail.get(detail_plan, "") or "").strip()
-            task_key = normalize_code(task_raw)
-            plan_key = normalize_code(plan_raw)
-            desc_task_key = normalize(detail.get(detail_desc_task, ""))
-            desc_plan_key = normalize(detail.get(detail_desc_plan, ""))
-            if not all((day, person_key, job_key, task_key, plan_key, desc_task_key)):
-                continue
-            code_pair = (task_key, plan_key, task_raw, plan_raw)
-            detail_codes_by_activity.setdefault((day, person_key, job_key, desc_task_key), set()).add(code_pair)
-            if desc_plan_key:
-                detail_codes_by_description.setdefault((day, person_key, job_key, desc_plan_key, desc_task_key), set()).add(code_pair)
-
-    restored_detail_codes = 0
-    for index, row in daily.iterrows():
-        task_key = normalize_code(row.get("Codice task"))
-        plan_key = normalize_code(row.get("Numero riga commessa"))
-        if task_key and plan_key:
-            continue
-        base = (
-            detail_day(row.get(date_field)),
-            normalize_person(row.get(person_field, "")),
-            normalize_code(row.get("Codice commessa")),
-        )
-        task_description = normalize(row.get("Dettaglio attività", ""))
-        plan_description = normalize(row.get("Nome commessa", ""))
-        candidates = detail_codes_by_description.get((*base, plan_description, task_description), set()) if plan_description else set()
-        if not candidates and task_description:
-            candidates = detail_codes_by_activity.get((*base, task_description), set())
-        if task_key:
-            candidates = {candidate for candidate in candidates if candidate[0] == task_key}
-        if plan_key:
-            candidates = {candidate for candidate in candidates if candidate[1] == plan_key}
-        if len(candidates) != 1:
-            continue
-        candidate = next(iter(candidates))
-        if not task_key:
-            daily.at[index, "Codice task"] = candidate[2]
-        if not plan_key:
-            daily.at[index, "Numero riga commessa"] = candidate[3]
-        restored_detail_codes += 1
-    print(f"Codici task/riga recuperati univocamente dalle descrizioni: {restored_detail_codes}/{len(daily)}")
 
     calendar_rows_by_activity = {}
     for index, row in daily.iterrows():
@@ -507,19 +439,73 @@ def main():
 
     billable_by_activity = {}
     confirmed_billable_by_activity = {}
+    revenue_groups = {}
+    allowed_people = {normalize(name) for name in TEAM_MEMBERS}
     for _, detail in detail_frame.iterrows():
-        key = (
-            detail_day(detail.get(detail_date)),
-            normalize_person(detail.get(detail_person, "")),
-            normalize_code(detail.get(detail_job)),
-            normalize_code(detail.get(detail_task)),
-            normalize_code(detail.get(detail_plan)),
-        )
-        if all(key):
-            billable_hours = detail_hours(detail)
-            billable_by_activity[key] = billable_by_activity.get(key, 0.0) + billable_hours
-            if has_detail_confirmations and as_bool(detail.get(detail_confirmed)):
-                confirmed_billable_by_activity[key] = confirmed_billable_by_activity.get(key, 0.0) + billable_hours
+        day = detail_day(detail.get(detail_date))
+        person_raw = canonical_person(text_value(detail.get(detail_person)))
+        person_key = normalize_person(person_raw)
+        base_job = text_value(detail.get(detail_job))
+        base_task = text_value(detail.get(detail_task))
+        base_plan = text_value(detail.get(detail_plan))
+        job_code = (text_value(detail.get(detail_crm_job)) if detail_crm_job else "") or base_job
+        task_code = (text_value(detail.get(detail_crm_task)) if detail_crm_task else "") or base_task
+        plan_code = (text_value(detail.get(detail_crm_plan)) if detail_crm_plan else "") or base_plan
+        base_key = (day, person_key, normalize_code(base_job), normalize_code(base_task), normalize_code(base_plan))
+        billable_hours = detail_hours(detail)
+        is_confirmed = detail_is_confirmed(detail)
+        if all(base_key):
+            billable_by_activity[base_key] = billable_by_activity.get(base_key, 0.0) + billable_hours
+            if is_confirmed:
+                confirmed_billable_by_activity[base_key] = confirmed_billable_by_activity.get(base_key, 0.0) + billable_hours
+
+        if day and person_key in allowed_people:
+            job_description = text_value(detail.get(detail_desc_plan)) if detail_desc_plan else ""
+            if not job_description and detail_desc_job:
+                job_description = text_value(detail.get(detail_desc_job))
+            activity_description = text_value(detail.get(detail_desc_task)) if detail_desc_task else ""
+            if not activity_description:
+                activity_description = text_value(detail.get("Attivita")) or text_value(detail.get("Descrizione Attivita"))
+            customer = customer_by_job.get(normalize(job_code), "") or customer_by_job.get(normalize(base_job), "")
+            activity_key = (
+                day, person_key, normalize_code(job_code), normalize_code(task_code), normalize_code(plan_code),
+                normalize(job_description), normalize(activity_description),
+            )
+            item = revenue_groups.setdefault(activity_key, {
+                "date": day, "person": person_raw, "job_code": job_code, "task_code": task_code,
+                "plan_code": plan_code, "job_name": job_description, "activity": activity_description,
+                "customer": customer, "logged": 0.0, "billable": 0.0, "confirmed_billable": 0.0,
+                "confirmed_logged": 0.0,
+            })
+            logged_minutes = max(numeric(detail.get(detail_zdt_minutes)) or 0.0, 0.0) if detail_zdt_minutes else 0.0
+            item["logged"] += logged_minutes / 60.0
+            item["billable"] += billable_hours
+            if is_confirmed:
+                item["confirmed_billable"] += billable_hours
+                item["confirmed_logged"] += logged_minutes / 60.0
+
+    revenue_records = []
+    for item in revenue_groups.values():
+        nav_row = {
+            "Codice commessa": item["job_code"], "Codice task": item["task_code"],
+            "Numero riga commessa": item["plan_code"],
+        }
+        match, status = resolve_job(nav_row)
+        price = match["price"] if match else 0.0
+        code = item["job_code"]
+        kind = "COIG" if code.upper().startswith("COIG") or item["job_name"].upper().startswith("COIG") or item["activity"].upper().startswith("COIG") else "Non COIG"
+        revenue_records.append({
+            "Data": item["date"], "Componente": item["person"], "Codice commessa": code,
+            "Codice task": item["task_code"], "Numero riga commessa": item["plan_code"],
+            "Nome commessa": item["job_name"], "Dettaglio attività": item["activity"],
+            "Cliente": item["customer"], "Tipo attività": kind,
+            "Ore Loggate": item["logged"], "Ore Confermate": item["confirmed_logged"],
+            "Ore valorizzate": item["billable"], "Ore valorizzate confermate": item["confirmed_billable"],
+            "Prezzo unitario NAV": price, "Stima fatturato": item["billable"] * price,
+            "Stima fatturato confermato": item["confirmed_billable"] * price,
+            "Stima fatturato da confermare": max(item["billable"] - item["confirmed_billable"], 0.0) * price,
+            "Fonte ore stima": "Ore Fatturabili CRM per attività", "Esito valorizzazione": status,
+        })
 
     daily["Prezzo unitario NAV"] = 0.0
     daily["Ore valorizzate"] = 0.0
@@ -575,6 +561,9 @@ def main():
     target = Path("public/activity-logs.json")
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(records, ensure_ascii=False, default=str, allow_nan=False), encoding="utf-8")
+    revenue_target = Path("public/activity-revenue.json")
+    revenue_target.write_text(json.dumps(revenue_records, ensure_ascii=False, default=str, allow_nan=False), encoding="utf-8")
+    print(f"Creati {len(revenue_records)} dettagli CRM/NAV per la valorizzazione economica.")
     print(f"Raggruppati {len(records)} totali per i {len(TEAM_MEMBERS)} componenti selezionati: data={date_field}, componente={person_field}, commessa={fields['job_code'] or 'non disponibile'}, descrizione commessa={fields['job_name'] or 'non disponibile'}, attività={fields['activity_name'] or 'non disponibile'}")
     print(f"Dimensione export consuntivazioni: {target.stat().st_size / (1024 * 1024):.1f} MB")
     print(f"Sincronizzati i totali da {account}/{container}/{blob} in {target}")

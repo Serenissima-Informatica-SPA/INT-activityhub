@@ -28,7 +28,7 @@ async function loadPrivateJson<T>(filename: string): Promise<T> {
   if (accessError || !access) throw new Error("Impossibile verificare l’ambito di accesso.");
   const scope = String(access.access_scope || "");
   if (scope !== "all" && scope !== "DEV") throw new Error("Ambito di accesso non valido.");
-  if (scope === "DEV" && filename !== "activity-logs.json.gz") {
+  if (scope === "DEV" && !["activity-logs.json.gz", "activity-revenue.json.gz"].includes(filename)) {
     throw new Error("Questo account può consultare solo i dati attività del gruppo DEV.");
   }
   const path = scope === "DEV" ? `DEV/${filename}` : filename;
@@ -41,6 +41,11 @@ async function loadPrivateJson<T>(filename: string): Promise<T> {
 
 export async function getActivityLogs(): Promise<Record<string, unknown>[]> {
   const payload = await loadPrivateJson<Record<string, unknown>[]>("activity-logs.json.gz");
+  return Array.isArray(payload) ? payload : [];
+}
+
+export async function getActivityRevenue(): Promise<Record<string, unknown>[]> {
+  const payload = await loadPrivateJson<Record<string, unknown>[]>("activity-revenue.json.gz");
   return Array.isArray(payload) ? payload : [];
 }
 

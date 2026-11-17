@@ -33,8 +33,9 @@ function hours(value: unknown) {
 const fmt = (value: number) => value.toLocaleString("it-IT", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const eur = (value: number) => value.toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
 
-export default function RevenueEstimate({ records, person, group, groupMembers, monthPrefix, todayKey }: {
+export default function RevenueEstimate({ records, revenueRecords = [], person, group, groupMembers, monthPrefix, todayKey }: {
   records: Row[];
+  revenueRecords?: Row[];
   person: string;
   group?: TeamGroup;
   groupMembers?: string[];
@@ -48,9 +49,19 @@ export default function RevenueEstimate({ records, person, group, groupMembers, 
   const resolvedGroupMembers = Array.isArray(groupMembers) && groupMembers.length > 0
     ? groupMembers
     : TEAM_MEMBERS[resolvedGroup];
+  const sidecarSignatures = new Set(revenueRecords.map((row) => [
+    String(row.Data ?? "").slice(0, 10), norm(row.Componente), norm(row["Codice commessa"]), norm(row["Dettaglio attività"])
+  ].join("|")));
+  const plannedFallback = records.filter((row) => {
+    const day = String(row.Data ?? "").slice(0, 10);
+    if (!day || day <= todayKey) return false;
+    const signature = [day, norm(row.Componente), norm(row["Codice commessa"]), norm(row["Dettaglio attività"])].join("|");
+    return !sidecarSignatures.has(signature);
+  });
+  const financialRecords = revenueRecords.length ? [...revenueRecords, ...plannedFallback] : records;
   const lines = useMemo(() => {
     const grouped = new Map<string, RevenueLine>();
-    records.forEach((row) => {
+    financialRecords.forEach((row) => {
       if (norm(row.Componente) !== norm(person)) return;
       const day = String(row.Data ?? "").slice(0, 10);
       if (!day.startsWith(monthPrefix) || day > todayKey) return;
@@ -74,7 +85,7 @@ export default function RevenueEstimate({ records, person, group, groupMembers, 
       grouped.set(key, current);
     });
     return [...grouped.values()].sort((a, b) => b.revenue - a.revenue || a.customer.localeCompare(b.customer, "it"));
-  }, [records, person, monthPrefix, todayKey]);
+  }, [financialRecords, person, monthPrefix, todayKey]);
 
   const economicTotals = useMemo(() => {
     const year = monthPrefix.slice(0, 4);
@@ -83,7 +94,7 @@ export default function RevenueEstimate({ records, person, group, groupMembers, 
     const personYear = empty();
     const groupMonth = empty();
     const groupYear = empty();
-    records.forEach((row) => {
+    financialRecords.forEach((row) => {
       const day = String(row.Data ?? "").slice(0, 10);
       if (!day || day.slice(0, 4) !== year) return;
       const isPerson = norm(row.Componente) === norm(person);
@@ -107,7 +118,7 @@ export default function RevenueEstimate({ records, person, group, groupMembers, 
       }
     });
     return { year, personYear, groupMonth, groupYear };
-  }, [records, person, resolvedGroup, resolvedGroupMembers, monthPrefix, todayKey]);
+  }, [financialRecords, person, resolvedGroup, resolvedGroupMembers, monthPrefix, todayKey]);
 
   const totals = lines.reduce((sum, line) => ({
     logged: sum.logged + line.logged,
@@ -129,7 +140,7 @@ export default function RevenueEstimate({ records, person, group, groupMembers, 
   const maxClientRevenue = clients[0]?.revenue || 0;
   const plannedClients = useMemo(() => {
     const values = new Map<string, { hours: number; revenue: number; lines: number }>();
-    records.forEach((row) => {
+    financialRecords.forEach((row) => {
       if (norm(row.Componente) !== norm(person)) return;
       const day = String(row.Data ?? "").slice(0, 10);
       if (!day.startsWith(monthPrefix) || day <= todayKey) return;
@@ -146,7 +157,7 @@ export default function RevenueEstimate({ records, person, group, groupMembers, 
     return [...values.entries()]
       .map(([name, value]) => ({ name, ...value }))
       .sort((a, b) => b.revenue - a.revenue || b.hours - a.hours || a.name.localeCompare(b.name, "it"));
-  }, [records, person, monthPrefix, todayKey]);
+  }, [financialRecords, person, monthPrefix, todayKey]);
   const maxPlannedRevenue = plannedClients[0]?.revenue || 0;
   const plannedRevenue = plannedClients.reduce((sum, client) => sum + client.revenue, 0);
   const valuedCount = lines.filter((line) => line.match === "Valorizzata").length;
