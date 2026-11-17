@@ -330,6 +330,35 @@ def main():
     if not detail_zdt_state and not detail_zdt_color and not detail_confirmed:
         raise ValueError("Il dettaglio ZDT non contiene stato, colore o flag di conferma")
 
+    # Diagnostica anonima copertura join tra riepilogo e dettaglio; non stampa dati di persona/commessa.
+    diagnostic_detail_keys = set()
+    for _, diagnostic_row in detail_frame.iterrows():
+        diagnostic_key = (
+            detail_day(diagnostic_row.get(detail_date)),
+            normalize_person(diagnostic_row.get(detail_person, "")),
+            normalize_code(diagnostic_row.get(detail_job)),
+            normalize_code(diagnostic_row.get(detail_task)),
+            normalize_code(diagnostic_row.get(detail_plan)),
+        )
+        if all(diagnostic_key):
+            diagnostic_detail_keys.add(diagnostic_key)
+    diagnostic_calendar_keys = set()
+    for _, diagnostic_row in daily.iterrows():
+        diagnostic_key = (
+            detail_day(diagnostic_row.get(date_field)),
+            normalize_person(diagnostic_row.get(person_field, "")),
+            normalize_code(diagnostic_row.get("Codice commessa")),
+            normalize_code(diagnostic_row.get("Codice task")),
+            normalize_code(diagnostic_row.get("Numero riga commessa")),
+        )
+        if all(diagnostic_key):
+            diagnostic_calendar_keys.add(diagnostic_key)
+    print(f"Righe dettaglio CRM/ZDT: {len(detail_frame)}; chiavi complete: {len(diagnostic_detail_keys)}; chiavi calendario: {len(diagnostic_calendar_keys)}")
+    for prefix_len in range(1, 6):
+        detail_prefixes = {key[:prefix_len] for key in diagnostic_detail_keys}
+        calendar_prefixes = {key[:prefix_len] for key in diagnostic_calendar_keys}
+        print(f"Copertura join per prime {prefix_len} chiavi: {len(detail_prefixes & calendar_prefixes)}/{len(calendar_prefixes)}")
+
     # Allinea i due feed usando il livello comune: giorno, persona e commessa/task/riga.
     # Le descrizioni possono differire; non vanno usate come chiavi di join.
     detail_status_by_activity = {}
