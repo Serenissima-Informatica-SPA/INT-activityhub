@@ -421,12 +421,13 @@ def main():
     )
 
     def detail_hours(row):
+        # ToBill è vincolante prima delle quantità CRM.
+        if detail_to_bill and not as_bool(row.get(detail_to_bill)):
+            return 0.0
         if detail_billable:
             value = numeric(row.get(detail_billable))
             if value is not None:
                 return max(value, 0)
-        if detail_to_bill and not as_bool(row.get(detail_to_bill)):
-            return 0.0
         if detail_invoice_hours:
             value = numeric(row.get(detail_invoice_hours))
             if value is not None:
