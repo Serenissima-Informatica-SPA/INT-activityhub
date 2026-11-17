@@ -451,7 +451,7 @@ export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: Te
         </section>
 
         <section className="activity-report activity-job-report">
-          <header><div><h2>Dove si concentrano le attività</h2><p>{selectedPerson} · {monthName} · ore confermate fino a oggi e pianificate da domani</p></div><span>{jobDetails.length} voci di dettaglio</span></header>
+          <header><div><h2>Dove si concentrano le attività</h2><p>{selectedPerson} · {monthName} · confermate e non confermate fino a oggi, pianificate da domani</p></div><span>{jobDetails.length} voci di dettaglio</span></header>
           <div className="activity-analysis">
             <div className="activity-balance-card">
               <div className="activity-balance-heading"><div><strong>Confermate e pianificate</strong><small>{balanceLabel}</small></div><span>{formatHours(totalReportHours)} h totali</span></div>
