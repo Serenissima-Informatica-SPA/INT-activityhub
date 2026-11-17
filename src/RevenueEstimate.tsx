@@ -38,10 +38,6 @@ function hours(value: unknown) {
 const fmt = (value: number) => value.toLocaleString("it-IT", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const eur = (value: number) => value.toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
 const CANCELED_STATES = new Set(["cancellata", "canceled", "cancelled", "annullata"]);
-function isPlannedRow(row: Row, todayKey: string) {
-  const day = String(row.Data ?? "").slice(0, 10);
-  return day > todayKey;
-}
 function isCanceledRow(row: Row) {
   return CANCELED_STATES.has(norm(row["Stato Attivita"]));
 }
@@ -101,6 +97,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
     const revenue = number(row["Stima fatturato confermato"]) || billableConfirmed * price;
     return [{
       ...row,
+      "Ore Loggate": confirmed,
       "Prezzo unitario NAV": price,
       "Ore valorizzate": billableConfirmed,
       "Ore valorizzate confermate": billableConfirmed,
@@ -142,7 +139,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
     const revenue = number(row["Stima fatturato da confermare"]) || billableUnconfirmed * price;
     return [{
       ...row,
-      "Ore Loggate": 0,
+      "Ore Loggate": unconfirmedLogged,
       "Ore Confermate": 0,
       "Prezzo unitario NAV": price,
       "Ore valorizzate": billableUnconfirmed,
@@ -225,10 +222,10 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
   }, [financialRecords, person, resolvedGroup, resolvedGroupMembers, monthPrefix, todayKey]);
 
   const actualLines = lines.filter((line) => !line.forecast);
-  const totals = actualLines.reduce((sum, line) => ({
+  const totals = lines.reduce((sum, line) => ({
     logged: sum.logged + line.logged,
-    billable: sum.billable + line.billable,
-    revenue: sum.revenue + line.revenue
+    billable: sum.billable + (line.forecast ? 0 : line.billable),
+    revenue: sum.revenue + (line.forecast ? 0 : line.revenue)
   }), { logged: 0, billable: 0, revenue: 0 });
   const unresolved = lines.filter((line) => line.match !== "Valorizzata");
   const clients = useMemo(() => {
@@ -242,7 +239,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
     });
     return [...values.entries()].map(([name, value]) => ({ name, ...value })).sort((a, b) => b.revenue - a.revenue);
   }, [actualLines]);
-  const maxClientRevenue/ = clients[0]?.revenue || 0;
+  const maxClientRevenue = clients[0]?.revenue || 0;
   const plannedClients = useMemo(() => {
     const values = new Map<string, { hours: number; revenue: number; lines: number }>();
     financialRecords.forEach((row) => {
