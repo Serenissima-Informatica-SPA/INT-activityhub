@@ -392,6 +392,60 @@ def main():
         totals[2] += 1
         totals[3] += 1 if is_confirmed else 0
 
+    # Il riepilogo giornaliero recente non valorizza quasi mai Task/Riga.
+    # Recupera i codici dal dettaglio per descrizioni, solo se la corrispondenza è univoca.
+    detail_desc_task = next((column for column in detail_frame.columns if normalize(column) == "descrizionetask"), None)
+    detail_desc_plan = next((column for column in detail_frame.columns if normalize(column) == "descrizioneriga"), None)
+    detail_codes_by_description = {}
+    detail_codes_by_activity = {}
+    if detail_desc_task and detail_desc_plan:
+        for _, detail in detail_frame.iterrows():
+            day = detail_day(detail.get(detail_date))
+            person_key = normalize_person(detail.get(detail_person, ""))
+            job_key = normalize_code(detail.get(detail_job))
+            task_raw = str(detail.get(detail_task, "") or "").strip()
+            plan_raw = str(detail.get(detail_plan, "") or "").strip()
+            task_key = normalize_code(task_raw)
+            plan_key = normalize_code(plan_raw)
+            desc_task_key = normalize(detail.get(detail_desc_task, ""))
+            desc_plan_key = normalize(detail.get(detail_desc_plan, ""))
+            if not all((day, person_key, job_key, task_key, plan_key, desc_task_key)):
+                continue
+            code_pair = (task_key, plan_key, task_raw, plan_raw)
+            detail_codes_by_activity.setdefault((day, person_key, job_key, desc_task_key), set()).add(code_pair)
+            if desc_plan_key:
+                detail_codes_by_description.setdefault((day, person_key, job_key, desc_plan_key, desc_task_key), set()).add(code_pair)
+
+    restored_detail_codes = 0
+    for index, row in daily.iterrows():
+        task_key = normalize_code(row.get("Codice task"))
+        plan_key = normalize_code(row.get("Numero riga commessa"))
+        if task_key and plan_key:
+            continue
+        base = (
+            detail_day(row.get(date_field)),
+            normalize_person(row.get(person_field, "")),
+            normalize_code(row.get("Codice commessa")),
+        )
+        task_description = normalize(row.get("Dettaglio attività", ""))
+        plan_description = normalize(row.get("Nome commessa", ""))
+        candidates = detail_codes_by_description.get((*base, plan_description, task_description), set()) if plan_description else set()
+        if not candidates and task_description:
+            candidates = detail_codes_by_activity.get((*base, task_description), set())
+        if task_key:
+            candidates = {candidate for candidate in candidates if candidate[0] == task_key}
+        if plan_key:
+            candidates = {candidate for candidate in candidates if candidate[1] == plan_key}
+        if len(candidates) != 1:
+            continue
+        candidate = next(iter(candidates))
+        if not task_key:
+            daily.at[index, "Codice task"] = candidate[2]
+        if not plan_key:
+            daily.at[index, "Numero riga commessa"] = candidate[3]
+        restored_detail_codes += 1
+    print(f"Codici task/riga recuperati univocamente dalle descrizioni: {restored_detail_codes}/{len(daily)}")
+
     calendar_rows_by_activity = {}
     for index, row in daily.iterrows():
         key = (
