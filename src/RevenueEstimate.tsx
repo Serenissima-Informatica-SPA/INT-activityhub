@@ -34,7 +34,6 @@ function hours(value: unknown) {
 }
 const fmt = (value: number) => value.toLocaleString("it-IT", { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 const eur = (value: number) => value.toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: 2 });
-const PLANNED_STATES = new Set(["schedulata", "scheduled", "pianificata", "planned"]);
 const CANCELED_STATES = new Set(["cancellata", "canceled", "cancelled", "annullata"]);
 function isPlannedRow(row: Row, todayKey: string) {
   const day = String(row.Data ?? "").slice(0, 10);
