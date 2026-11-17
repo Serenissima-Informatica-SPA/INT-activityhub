@@ -242,23 +242,36 @@ def main():
     # Collega ogni riga ZDT al dettaglio CRM/NAV tramite commessa, task e riga.
     jobs_path = Path("public/jobs.json")
     jobs = json.loads(jobs_path.read_text(encoding="utf-8")) if jobs_path.exists() else []
-    jobs_by_key = {};
+    jobs_by_key = {}
+    jobs_by_job_task = {}
+    jobs_by_job_plan = {}
+    jobs_by_job = {}
     for job in jobs:
-        key = (
-            normalize_code(job.get("JobNo")),
-            normalize_code(job.get("JobTaskNo")),
-            normalize_code(job.get("JobPlanNo")),
-        )
+        job_code = normalize_code(job.get("JobNo"))
+        task_code = normalize_code(job.get("JobTaskNo"))
+        plan_code = normalize_code(job.get("JobPlanNo"))
+        key = (job_code, task_code, plan_code)
+        if job_code:
+            jobs_by_job.setdefault(job_code, []).append(job)
+        if job_code and task_code:
+            jobs_by_job_task.setdefault((job_code, task_code), []).append(job)
+        if job_code and plan_code:
+            jobs_by_job_plan.setdefault((job_code, plan_code), []).append(job)
         if all(key):
             jobs_by_key.setdefault(key, []).append(job)
 
     def resolve_job(row):
-        key = (
-            normalize_code(row.get("Codice commessa")),
-            normalize_code(row.get("Codice task")),
-            normalize_code(row.get("Numero riga commessa")),
-        )
+        job_code = normalize_code(row.get("Codice commessa"))
+        task_code = normalize_code(row.get("Codice task"))
+        plan_code = normalize_code(row.get("Numero riga commessa"))
+        key = (job_code, task_code, plan_code)
         candidates = jobs_by_key.get(key, [])
+        if not candidates and job_code and task_code:
+            candidates = jobs_by_job_task.get((job_code, task_code), [])
+        if not candidates and job_code and plan_code:
+            candidates = jobs_by_job_plan.get((job_code, plan_code), [])
+        if not candidates and job_code:
+            candidates = jobs_by_job.get(job_code, [])
         if not candidates:
             return None, "Commessa/task/riga non abbinati"
 
