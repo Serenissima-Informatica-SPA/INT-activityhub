@@ -228,10 +228,16 @@ export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: Te
   }, [records, selectedPerson, monthPrefix, todayKey]);
   const plannedDetails = useMemo(() => {
     const grouped = new Map<string, JobDetail>();
-    records.forEach((row) => {
+    const plannedStates = new Set(["schedulata", "scheduled", "pianificata", "planned"]);
+    const canceledStates = new Set(["cancellata", "canceled", "cancelled", "annullata"]);
+    const sourceRows = revenueRecords.length ? revenueRecords : records.filter((row) => toDay(row.Data) > todayKey);
+    sourceRows.forEach((row) => {
       if (normalize(String(row.Componente ?? "").trim()) !== normalize(selectedPerson)) return;
       const day = toDay(row.Data);
-      if (!day || !day.startsWith(monthPrefix) || day <= todayKey || !isWorkday(day)) return;
+      const state = normalize(String(row["Stato Attivita"] ?? ""));
+      const plannedStatus = plannedStates.has(state);
+      const canceled = canceledStates.has(state);
+      if (!day || !day.startsWith(monthPrefix) || !isWorkday(day) || canceled || (day <= todayKey && !plannedStatus)) return;
       const planned = Math.max(toHours(row["Ore Loggate"] ?? row.Ore), 0);
       if (!planned) return;
       const code = String(row["Codice commessa"] ?? "").trim();
@@ -246,7 +252,7 @@ export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: Te
       grouped.set(key, current);
     });
     return [...grouped.values()].sort((a, b) => (b.planned || 0) - (a.planned || 0) || a.code.localeCompare(b.code, "it"));
-  }, [records, selectedPerson, monthPrefix, todayKey]);
+  }, [records, revenueRecords, selectedPerson, monthPrefix, todayKey]);
   const coigDetails = jobDetails.filter((item) => item.kind === "COIG");
   const otherDetails = jobDetails.filter((item) => item.kind === "Non COIG");
   const coigPlannedDetails = plannedDetails.filter((item) => item.kind === "COIG");
