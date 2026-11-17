@@ -313,6 +313,61 @@ def main():
         parsed = pd.to_datetime(value, errors="coerce", dayfirst=True)
         return parsed.strftime("%Y-%m-%d") if pd.notna(parsed) else ""
 
+    # I totali del calendario devono seguire il dettaglio ZDT, che contiene
+    # lo stato effettivo di ciascuna attività. Il Parquet giornaliero può
+    # arrivare con Ore Confermate non riallineate allo stato/colore ZDT.
+    detail_logged_hours = find_field(detail_frame.columns, "hours")
+    detail_confirmed_hours = find_field(detail_frame.columns, "confirmed_hours")
+    detail_job_name = find_field(detail_frame.columns, "job_name")
+    detail_activity_name = find_field(detail_frame.columns, "activity_name")
+    if not detail_logged_hours:
+        raise ValueError("Il dettaglio ZDT non contiene le ore loggate necessarie al calendario")
+
+    detail_totals_by_activity = {}
+    for _, detail in detail_frame.iterrows():
+        key = (
+            detail_day(detail.get(detail_date)),
+            normalize_person(detail.get(detail_person, "")),
+            normalize_code(detail.get(detail_job)),
+            normalize_code(detail.get(detail_task)),
+            normalize_code(detail.get(detail_plan)),
+            normalize(detail.get(detail_job_name, "") if detail_job_name else ""),
+            normalize(detail.get(detail_activity_name, "") if detail_activity_name else ""),
+        )
+        if not all(key[:5]):
+            continue
+        logged = max(numeric(detail.get(detail_logged_hours)) or 0.0, 0.0)
+        if detail_confirmed:
+            confirmed = logged if as_bool(detail.get(detail_confirmed)) else 0.0
+        else:
+            confirmed = max(numeric(detail.get(detail_confirmed_hours)) or 0.0, 0.0)
+        confirmed = min(confirmed, logged)
+        totals = detail_totals_by_activity.setdefault(key, [0.0, 0.0])
+        totals[0] += logged
+        totals[1] += confirmed
+
+    detail_matched_calendar_rows = 0
+    for index, row in daily.iterrows():
+        key = (
+            detail_day(row.get(date_field)),
+            normalize_person(row.get(person_field, "")),
+            normalize_code(row.get("Codice commessa")),
+            normalize_code(row.get("Codice task")),
+            normalize_code(row.get("Numero riga commessa")),
+            normalize(row.get("Nome commessa", "")),
+            normalize(row.get("Dettaglio attività", "")),
+        )
+        totals = detail_totals_by_activity.get(key)
+        if totals is None:
+            continue
+        logged, confirmed = totals
+        daily.at[index, "Ore Loggate"] = logged
+        daily.at[index, "Ore Confermate"] = confirmed
+        daily.at[index, "Ore Non Confermate"] = max(logged - confirmed, 0.0)
+        detail_matched_calendar_rows += 1
+
+    print(f"Righe calendario riallineate al dettaglio ZDT: {detail_matched_calendar_rows}/{len(daily)}")
+
     def detail_hours(row):
         if detail_billable:
             value = numeric(row.get(detail_billable))
