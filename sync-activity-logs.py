@@ -319,8 +319,16 @@ def main():
         (column for column in detail_frame.columns if normalize(column) == "minutizdt"),
         None,
     )
-    if not detail_confirmed:
-        raise ValueError("Il dettaglio ZDT non contiene il flag di conferma attività")
+    detail_zdt_state = next(
+        (column for column in detail_frame.columns if normalize(column) == "statoattivita"),
+        None,
+    )
+    detail_zdt_color = next(
+        (column for column in detail_frame.columns if normalize(column) == "colorestatozdt"),
+        None,
+    )
+    if not detail_zdt_state and not detail_zdt_color and not detail_confirmed:
+        raise ValueError("Il dettaglio ZDT non contiene stato, colore o flag di conferma")
 
     # Allinea i due feed usando il livello comune: giorno, persona e commessa/task/riga.
     # Le descrizioni possono differire; non vanno usate come chiavi di join.
@@ -336,11 +344,20 @@ def main():
         if not all(key):
             continue
         minutes = max(numeric(detail.get(detail_zdt_minutes)) or 0.0, 0.0) if detail_zdt_minutes else 0.0
+        state = normalize(detail.get(detail_zdt_state, "")) if detail_zdt_state else ""
+        color_raw = str(detail.get(detail_zdt_color, "") or "").strip().lower() if detail_zdt_color else ""
+        color_token = normalize(color_raw)
+        if state:
+            is_confirmed = state in {"completata", "completed"}
+        elif color_token:
+            is_confirmed = any(token in color_token for token in ("green", "lime", "00ff00"))
+        else:
+            is_confirmed = as_bool(detail.get(detail_confirmed))
         totals = detail_status_by_activity.setdefault(key, [0.0, 0.0, 0, 0])
         totals[0] += minutes
-        totals[1] += minutes if as_bool(detail.get(detail_confirmed)) else 0.0
+        totals[1] += minutes if is_confirmed else 0.0
         totals[2] += 1
-        totals[3] += 1 if as_bool(detail.get(detail_confirmed)) else 0
+        totals[3] += 1 if is_confirmed else 0
 
     calendar_rows_by_activity = {}
     for index, row in daily.iterrows():
