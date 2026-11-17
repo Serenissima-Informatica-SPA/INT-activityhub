@@ -70,7 +70,39 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
     const signature = [day, norm(row.Componente), norm(row["Codice commessa"]), norm(row["Dettaglio attività"])].join("|");
     return !sidecarSignatures.has(signature);
   });
-  const financialRecords = revenueRecords.length ? [...revenueRecords, ...plannedFallback] : records;
+  // Alcune attività confermate ZDT possono non avere una riga nel dettaglio CRM.
+  // In quel caso usa il riepilogo giornaliero, già abbinato a tariffa NAV,
+  // applicando la durata confermata come quantità effettiva.
+  const revenueActivityKeys = new Set(revenueRecords.map((row) => [
+    String(row.Data ?? "").slice(0, 10), norm(row.Componente), norm(row["Codice commessa"]),
+    norm(row["Codice task"]), norm(row["Numero riga commessa"])
+  ].join("|")));
+  const confirmedFallback = revenueRecords.length ? records.flatMap((row) => {
+    const day = String(row.Data ?? "").slice(0, 10);
+    const confirmed = Math.max(hours(row["Ore Confermate"]), 0);
+    const price = Math.max(number(row["Prezzo unitario NAV"]), 0);
+    const activityKey = [
+      day, norm(row.Componente), norm(row["Codice commessa"]),
+      norm(row["Codice task"]), norm(row["Numero riga commessa"])
+    ].join("|");
+    if (!day || day > todayKey || confirmed <= 0 || price <= 0 || isCanceledRow(row) || revenueActivityKeys.has(activityKey)) return [];
+    const rawToBill = row["ToBill CRM"];
+    const toBill = typeof rawToBill === "boolean" ? rawToBill : rawToBill == null || rawToBill === "" ? null : ["true", "1", "si", "yes", "y"].includes(norm(rawToBill));
+    if (toBill === false) return [];
+    const revenue = confirmed * price;
+    return [{
+      ...row,
+      "Ore valorizzate": confirmed,
+      "Ore valorizzate confermate": confirmed,
+      "Stima fatturato": revenue,
+      "Stima fatturato confermato": revenue,
+      "Fonte ore stima": "Ore confermate ZDT · tariffa NAV",
+      "Esito valorizzazione": "Valorizzata"
+    }];
+  }) : [];
+  const financialRecords = revenueRecords.length
+    ? [...revenueRecords, ...confirmedFallback, ...plannedFallback]
+    : records;
   const lines = useMemo(() => {
     const grouped = new Map<string, RevenueLine>();
     financialRecords.forEach((row) => {
