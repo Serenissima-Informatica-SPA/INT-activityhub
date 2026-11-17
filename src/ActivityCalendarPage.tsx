@@ -228,16 +228,14 @@ export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: Te
   }, [records, selectedPerson, monthPrefix, todayKey]);
   const plannedDetails = useMemo(() => {
     const grouped = new Map<string, JobDetail>();
-    const plannedStates = new Set(["schedulata", "scheduled", "pianificata", "planned"]);
     const canceledStates = new Set(["cancellata", "canceled", "cancelled", "annullata"]);
     const sourceRows = revenueRecords.length ? revenueRecords : records.filter((row) => toDay(row.Data) > todayKey);
     sourceRows.forEach((row) => {
       if (normalize(String(row.Componente ?? "").trim()) !== normalize(selectedPerson)) return;
       const day = toDay(row.Data);
       const state = normalize(String(row["Stato Attivita"] ?? ""));
-      const plannedStatus = plannedStates.has(state);
       const canceled = canceledStates.has(state);
-      if (!day || !day.startsWith(monthPrefix) || !isWorkday(day) || canceled || (day <= todayKey && !plannedStatus)) return;
+      if (!day || !day.startsWith(monthPrefix) || !isWorkday(day) || canceled || day <= todayKey) return;
       const planned = Math.max(toHours(row["Ore Loggate"] ?? row.Ore), 0);
       if (!planned) return;
       const code = String(row["Codice commessa"] ?? "").trim();
