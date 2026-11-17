@@ -108,6 +108,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
     const revenue = confirmed * price;
     return [{
       ...row,
+      "Prezzo unitario NAV": price,
       "Ore valorizzate": confirmed,
       "Ore valorizzate confermate": confirmed,
       "Stima fatturato": revenue,
