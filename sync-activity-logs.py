@@ -313,19 +313,18 @@ def main():
         parsed = pd.to_datetime(value, errors="coerce", dayfirst=True)
         return parsed.strftime("%Y-%m-%d") if pd.notna(parsed) else ""
 
-    # I totali del calendario devono seguire il dettaglio ZDT, che contiene
-    # lo stato effettivo di ciascuna attività. Il Parquet giornaliero può
-    # arrivare con Ore Confermate non riallineate allo stato/colore ZDT.
-    detail_logged_hours = find_field(detail_frame.columns, "hours")
-    detail_confirmed_hours = find_field(detail_frame.columns, "confirmed_hours")
-    detail_job_name = find_field(detail_frame.columns, "job_name")
-    detail_activity_name = find_field(detail_frame.columns, "activity_name")
-    if not detail_logged_hours:
-        raise ValueError("Il dettaglio ZDT non contiene le ore loggate necessarie al calendario")
+    # Le ore loggate arrivano dal riepilogo giornaliero, che è la fonte valida
+    # per il calendario. Il dettaglio ZDT fornisce lo stato di conferma attività.
+    detail_zdt_minutes = next(
+        (column for column in detail_frame.columns if normalize(column) == "minutizdt"),
+        None,
+    )
+    if not detail_confirmed:
+        raise ValueError("Il dettaglio ZDT non contiene il flag di conferma attività")
 
-    # Raggruppa sul livello comune ai due feed: giorno, persona e commessa/task/riga.
-    # Le descrizioni possono differire fra il riepilogo giornaliero e il dettaglio.
-    detail_totals_by_activity = {}
+    # Allinea i due feed usando il livello comune: giorno, persona e commessa/task/riga.
+    # Le descrizioni possono differire; non vanno usate come chiavi di join.
+    detail_status_by_activity = {}
     for _, detail in detail_frame.iterrows():
         key = (
             detail_day(detail.get(detail_date)),
@@ -336,15 +335,12 @@ def main():
         )
         if not all(key):
             continue
-        logged = max(numeric(detail.get(detail_logged_hours)) or 0.0, 0.0)
-        if detail_confirmed:
-            confirmed = logged if as_bool(detail.get(detail_confirmed)) else 0.0
-        else:
-            confirmed = max(numeric(detail.get(detail_confirmed_hours)) or 0.0, 0.0)
-        confirmed = min(confirmed, logged)
-        totals = detail_totals_by_activity.setdefault(key, [0.0, 0.0])
-        totals[0] += logged
-        totals[1] += confirmed
+        minutes = max(numeric(detail.get(detail_zdt_minutes)) or 0.0, 0.0) if detail_zdt_minutes else 0.0
+        totals = detail_status_by_activity.setdefault(key, [0.0, 0.0, 0, 0])
+        totals[0] += minutes
+        totals[1] += minutes if as_bool(detail.get(detail_confirmed)) else 0.0
+        totals[2] += 1
+        totals[3] += 1 if as_bool(detail.get(detail_confirmed)) else 0
 
     calendar_rows_by_activity = {}
     for index, row in daily.iterrows():
@@ -361,39 +357,30 @@ def main():
     detail_matched_calendar_rows = 0
     detail_matched_activities = 0
     for key, indexes in calendar_rows_by_activity.items():
-        totals = detail_totals_by_activity.get(key)
+        totals = detail_status_by_activity.get(key)
         if totals is None:
             continue
-        detail_logged, detail_confirmed_total = totals
-        original_hours = [
-            max(numeric(daily.at[index, "Ore Loggate"]) or 0.0, 0.0)
-            for index in indexes
-        ]
-        weight_total = sum(original_hours)
-        if weight_total:
-            weights = [hours / weight_total for hours in original_hours]
-        else:
-            weights = [1 / len(indexes)] * len(indexes)
-
-        assigned_logged = assigned_confirmed = 0.0
-        for position, (index, weight) in enumerate(zip(indexes, weights)):
-            is_last = position == len(indexes) - 1
-            logged = detail_logged - assigned_logged if is_last else detail_logged * weight
-            confirmed = detail_confirmed_total - assigned_confirmed if is_last else detail_confirmed_total * weight
-            confirmed = min(max(confirmed, 0.0), logged)
-            daily.at[index, "Ore Loggate"] = logged
+        total_minutes, confirmed_minutes, total_count, confirmed_count = totals
+        confirmation_share = (
+            confirmed_minutes / total_minutes
+            if total_minutes > 0
+            else (confirmed_count / total_count if total_count else 0.0)
+        )
+        confirmation_share = min(max(confirmation_share, 0.0), 1.0)
+        for index in indexes:
+            # Preserve the daily Parquet's logged duration; only correct confirmation.
+            logged = max(numeric(daily.at[index, "Ore Loggate"]) or 0.0, 0.0)
+            confirmed = logged * confirmation_share
             daily.at[index, "Ore Confermate"] = confirmed
             daily.at[index, "Ore Non Confermate"] = max(logged - confirmed, 0.0)
-            assigned_logged += logged
-            assigned_confirmed += confirmed
             detail_matched_calendar_rows += 1
         detail_matched_activities += 1
 
     if daily.empty or detail_matched_calendar_rows == 0:
-        raise ValueError("Nessuna riga del calendario abbinata alle ore del dettaglio ZDT")
+        raise ValueError("Nessuna riga del calendario abbinata allo stato del dettaglio ZDT")
     print(
-        f"Righe calendario riallineate al dettaglio ZDT: "
-        f"{detail_matched_calendar_rows}/{len(daily)}; "
+        f"Conferme calendario riallineate al dettaglio ZDT: "
+        f"{detail_matched_calendar_rows}/{len(daily)} righe; "
         f"attività abbinate: {detail_matched_activities}/{len(calendar_rows_by_activity)}"
     )
 
