@@ -61,15 +61,6 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
   const resolvedGroupMembers = Array.isArray(groupMembers) && groupMembers.length > 0
     ? groupMembers
     : TEAM_MEMBERS[resolvedGroup];
-  const sidecarSignatures = new Set(revenueRecords.map((row) => [
-    String(row.Data ?? "").slice(0, 10), norm(row.Componente), norm(row["Codice commessa"]), norm(row["Dettaglio attività"])
-  ].join("|")));
-  const plannedFallback = records.filter((row) => {
-    const day = String(row.Data ?? "").slice(0, 10);
-    if (!day || day <= todayKey) return false;
-    const signature = [day, norm(row.Componente), norm(row["Codice commessa"]), norm(row["Dettaglio attività"])].join("|");
-    return !sidecarSignatures.has(signature);
-  });
   // Recupera la tariffa NAV dal dettaglio economico anche quando il riepilogo
   // giornaliero non ha ereditato il prezzo dalla riga CRM/NAV.
   const pricesByJobKey = new Map<string, Set<number>>();
@@ -118,8 +109,27 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       "ToBill CRM": null
     }];
   });
-  const plannedRevenueRecords = revenueRecords.filter((row) => isPlannedRow(row, todayKey) && !isCanceledRow(row));
-  const financialRecords = [...confirmedActuals, ...plannedRevenueRecords, ...plannedFallback];
+  // Il previsto segue le ore presenti nel calendario ZDT; CRM serve solo
+  // a recuperare la tariffa NAV quando il riepilogo giornaliero non la include.
+  const plannedZdtRecords = records.flatMap((row) => {
+    const day = String(row.Data ?? "").slice(0, 10);
+    const plannedHours = Math.max(hours(row["Ore Loggate"] ?? row.Ore), 0);
+    const price = confirmedNavPrice(row);
+    if (!day || day <= todayKey || plannedHours <= 0 || isCanceledRow(row)) return [];
+    const revenue = plannedHours * price;
+    return [{
+      ...row,
+      "Prezzo unitario NAV": price,
+      "Ore valorizzate": plannedHours,
+      "Ore valorizzate confermate": 0,
+      "Stima fatturato": revenue,
+      "Stima fatturato confermato": 0,
+      "Fonte ore stima": "Ore pianificate ZDT × tariffa NAV",
+      "Esito valorizzazione": price > 0 ? "Valorizzata" : String(row["Esito valorizzazione"] ?? "Tariffa NAV non disponibile"),
+      "ToBill CRM": null
+    }];
+  });
+  const financialRecords = [...confirmedActuals, ...plannedZdtRecords];
   const lines = useMemo(() => {
     const grouped = new Map<string, RevenueLine>();
     financialRecords.forEach((row) => {
