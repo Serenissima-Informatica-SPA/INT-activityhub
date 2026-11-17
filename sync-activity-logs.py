@@ -436,7 +436,8 @@ def main():
 
     def detail_hours(row):
         # ToBill è vincolante prima delle quantità CRM.
-        if detail_to_bill and not as_bool(row.get(detail_to_bill)):
+        raw_to_bill = row.get(detail_to_bill) if detail_to_bill else None
+        if detail_to_bill and raw_to_bill is not None and not pd.isna(raw_to_bill) and not as_bool(raw_to_bill):
             return 0.0
         if detail_billable:
             value = numeric(row.get(detail_billable))
@@ -451,6 +452,12 @@ def main():
             if value is not None:
                 return max(value / 60, 0)
         return 0.0
+
+    def detail_has_invoice_quantity(row):
+        for column in (detail_billable, detail_invoice_hours, detail_invoice_minutes):
+            if column and numeric(row.get(column)) is not None:
+                return True
+        return False
 
     billable_by_activity = {}
     confirmed_billable_by_activity = {}
@@ -471,21 +478,20 @@ def main():
         state_label = text_value(detail.get(detail_zdt_state)) if detail_zdt_state else ""
         state_key = normalize(state_label)
         is_confirmed = detail_is_confirmed(detail)
-        to_bill_flag = as_bool(detail.get(detail_to_bill)) if detail_to_bill else None
+        raw_to_bill = detail.get(detail_to_bill) if detail_to_bill else None
+        to_bill_flag = as_bool(raw_to_bill) if detail_to_bill and raw_to_bill is not None and not pd.isna(raw_to_bill) else None
         logged_minutes = max(numeric(detail.get(detail_zdt_minutes)) or 0.0, 0.0) if detail_zdt_minutes else 0.0
-        is_future = bool(day and day > valuation_today_key)
         canceled = state_key in {"cancellata", "cancelled", "canceled", "annullata"}
-        if canceled or (detail_to_bill and not to_bill_flag):
+        has_invoice_quantity = detail_has_invoice_quantity(detail)
+        if canceled or to_bill_flag is False:
             billable_hours = 0.0
-        elif is_confirmed:
-            # L'effettivo si basa sulle ore ZDT confermate, mai sulla quantità CRM ripetuta.
-            billable_hours = logged_minutes / 60.0
-        elif is_future:
-            # Il previsto usa la quantità fatturabile CRM per le attività future.
+            billable_source = "Non fatturabile CRM"
+        elif to_bill_flag is True and has_invoice_quantity:
             billable_hours = detail_hours(detail)
+            billable_source = "Ore Enable Invoice CRM"
         else:
-            # Attività passate non confermate non entrano nell'effettivo.
-            billable_hours = 0.0
+            billable_hours = logged_minutes / 60.0
+            billable_source = "Ore ZDT"
         if all(base_key):
             billable_by_activity[base_key] = billable_by_activity.get(base_key, 0.0) + billable_hours
             if is_confirmed:
@@ -502,13 +508,14 @@ def main():
             crm_activity_id = text_value(detail.get(detail_crm_activity_id)) if detail_crm_activity_id else ""
             activity_key = (
                 day, person_key, normalize_code(job_code), normalize_code(task_code), normalize_code(plan_code),
-                normalize(job_description), normalize(activity_description), state_key, to_bill_flag, crm_activity_id,
+                normalize(job_description), normalize(activity_description), state_key, to_bill_flag, crm_activity_id, billable_source,
             )
             item = revenue_groups.setdefault(activity_key, {
                 "date": day, "person": person_raw, "job_code": job_code, "task_code": task_code,
                 "plan_code": plan_code, "job_name": job_description, "activity": activity_description,
                 "state": state_label, "to_bill": to_bill_flag, "crm_activity_id": crm_activity_id, "customer": customer,
                 "logged": 0.0, "billable": 0.0, "confirmed_billable": 0.0, "confirmed_logged": 0.0,
+                "billable_source": billable_source,
             })
             item["logged"] += logged_minutes / 60.0
             item["billable"] += billable_hours
@@ -537,13 +544,11 @@ def main():
             "Cliente": item["customer"], "Tipo attività": kind,
             "Ore Loggate": item["logged"], "Ore Confermate": item["confirmed_logged"],
             "Ore valorizzate": item["billable"], "Ore valorizzate confermate": item["confirmed_billable"],
+            "Ore valorizzate da confermare": max(item["billable"] - item["confirmed_billable"], 0.0),
             "Prezzo unitario NAV": price, "Stima fatturato": item["billable"] * price,
             "Stima fatturato confermato": item["confirmed_billable"] * price,
             "Stima fatturato da confermare": max(item["billable"] - item["confirmed_billable"], 0.0) * price,
-            "Fonte ore stima": (
-                "Ore confermate ZDT" if item["confirmed_logged"] > 0
-                else ("Ore Fatturabili CRM per attività" if item["date"] > valuation_today_key else "Ore non confermate ZDT · escluse")
-            ), "Esito valorizzazione": status,
+            "Fonte ore stima": item["billable_source"], "Esito valorizzazione": status,
         })
 
     status_counts = {}
@@ -556,6 +561,7 @@ def main():
     daily["Prezzo unitario NAV"] = 0.0
     daily["Ore valorizzate"] = 0.0
     daily["Ore valorizzate confermate"] = 0.0
+    daily["Ore valorizzate da confermare"] = 0.0
     daily["Stima fatturato"] = 0.0
     daily["Stima fatturato confermato"] = 0.0
     daily["Stima fatturato da confermare"] = 0.0
@@ -576,8 +582,22 @@ def main():
             normalize_code(row.get("Numero riga commessa")),
         )
         if detail_key not in billable_by_activity:
-            daily.at[index, "Esito valorizzazione"] = "Attività non abbinata al dettaglio CRM"
-            daily.at[index, "Fonte ore stima"] = "Dettaglio CRM mancante"
+            # Senza riga CRM/Enable Invoice valorizziamo la stessa durata ZDT del calendario.
+            billable_hours = max(numeric(row.get("Ore Loggate")) or 0.0, 0.0)
+            confirmed_hours = min(billable_hours, max(numeric(row.get("Ore Confermate")) or 0.0, 0.0))
+            daily.at[index, "Ore valorizzate"] = billable_hours
+            daily.at[index, "Ore valorizzate confermate"] = confirmed_hours
+            daily.at[index, "Ore valorizzate da confermare"] = max(billable_hours - confirmed_hours, 0.0)
+            daily.at[index, "Fonte ore stima"] = "Ore ZDT · Enable Invoice assente"
+            if match:
+                daily.at[index, "Prezzo unitario NAV"] = match["price"]
+                daily.at[index, "Stima fatturato"] = billable_hours * match["price"]
+                daily.at[index, "Stima fatturato confermato"] = confirmed_hours * match["price"]
+                daily.at[index, "Stima fatturato da confermare"] = max(billable_hours - confirmed_hours, 0.0) * match["price"]
+                daily.at[index, "Esito valorizzazione"] = "Valorizzata"
+            else:
+                daily.at[index, "Esito valorizzazione"] = status
+            matched_detail_rows += 1
             continue
         billable_hours = billable_by_activity[detail_key]
         matched_detail_rows += 1
@@ -589,6 +609,7 @@ def main():
             confirmed_hours = billable_hours * confirmed_share
         daily.at[index, "Ore valorizzate"] = billable_hours
         daily.at[index, "Ore valorizzate confermate"] = confirmed_hours
+        daily.at[index, "Ore valorizzate da confermare"] = max(billable_hours - confirmed_hours, 0.0)
         if match:
             daily.at[index, "Prezzo unitario NAV"] = match["price"]
             daily.at[index, "Stima fatturato"] = billable_hours * match["price"]
