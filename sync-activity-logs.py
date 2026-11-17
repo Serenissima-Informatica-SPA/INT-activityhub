@@ -456,8 +456,23 @@ def main():
         base_key = (day, person_key, normalize_code(base_job), normalize_code(base_task), normalize_code(base_plan))
         state_label = text_value(detail.get(detail_zdt_state)) if detail_zdt_state else ""
         state_key = normalize(state_label)
-        billable_hours = 0.0 if state_key in {"cancellata", "cancelled", "canceled", "annullata"} else detail_hours(detail)
         is_confirmed = detail_is_confirmed(detail)
+        to_bill_flag = as_bool(detail.get(detail_to_bill)) if detail_to_bill else None
+        logged_minutes = max(numeric(detail.get(detail_zdt_minutes)) or 0.0, 0.0) if detail_zdt_minutes else 0.0
+        italy_today = pd.Timestamp.now(tz="Europe/Rome").date().isoformat()
+        is_future = bool(day and day > italy_today)
+        canceled = state_key in {"cancellata", "cancelled", "canceled", "annullata"}
+        if canceled or (detail_to_bill and not to_bill_flag):
+            billable_hours = 0.0
+        elif is_confirmed:
+            # L'effettivo si basa sulle ore ZDT confermate, mai sulla quantità CRM ripetuta.
+            billable_hours = logged_minutes / 60.0
+        elif is_future:
+            # Il previsto usa la quantità fatturabile CRM per le attività future.
+            billable_hours = detail_hours(detail)
+        else:
+            # Attività passate non confermate non entrano nell'effettivo.
+            billable_hours = 0.0
         if all(base_key):
             billable_by_activity[base_key] = billable_by_activity.get(base_key, 0.0) + billable_hours
             if is_confirmed:
@@ -471,7 +486,6 @@ def main():
             if not activity_description:
                 activity_description = text_value(detail.get("Attivita")) or text_value(detail.get("Descrizione Attivita"))
             customer = customer_by_job.get(normalize(job_code), "") or customer_by_job.get(normalize(base_job), "")
-            to_bill_flag = as_bool(detail.get(detail_to_bill)) if detail_to_bill else None
             crm_activity_id = text_value(detail.get(detail_crm_activity_id)) if detail_crm_activity_id else ""
             activity_key = (
                 day, person_key, normalize_code(job_code), normalize_code(task_code), normalize_code(plan_code),
@@ -483,7 +497,6 @@ def main():
                 "state": state_label, "to_bill": to_bill_flag, "crm_activity_id": crm_activity_id, "customer": customer,
                 "logged": 0.0, "billable": 0.0, "confirmed_billable": 0.0, "confirmed_logged": 0.0,
             })
-            logged_minutes = max(numeric(detail.get(detail_zdt_minutes)) or 0.0, 0.0) if detail_zdt_minutes else 0.0
             item["logged"] += logged_minutes / 60.0
             item["billable"] += billable_hours
             if is_confirmed:
@@ -514,7 +527,10 @@ def main():
             "Prezzo unitario NAV": price, "Stima fatturato": item["billable"] * price,
             "Stima fatturato confermato": item["confirmed_billable"] * price,
             "Stima fatturato da confermare": max(item["billable"] - item["confirmed_billable"], 0.0) * price,
-            "Fonte ore stima": "Ore Fatturabili CRM per attività", "Esito valorizzazione": status,
+            "Fonte ore stima": (
+                "Ore confermate ZDT" if item["confirmed_logged"] > 0
+                else ("Ore Fatturabili CRM per attività" if item["date"] > pd.Timestamp.now(tz="Europe/Rome").date().isoformat() else "Ore non confermate ZDT · escluse")
+            ), "Esito valorizzazione": status,
         })
 
     status_counts = {}
