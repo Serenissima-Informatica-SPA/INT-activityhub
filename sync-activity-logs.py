@@ -470,15 +470,16 @@ def main():
             if not activity_description:
                 activity_description = text_value(detail.get("Attivita")) or text_value(detail.get("Descrizione Attivita"))
             customer = customer_by_job.get(normalize(job_code), "") or customer_by_job.get(normalize(base_job), "")
+            to_bill_flag = as_bool(detail.get(detail_to_bill)) if detail_to_bill else None
             activity_key = (
                 day, person_key, normalize_code(job_code), normalize_code(task_code), normalize_code(plan_code),
-                normalize(job_description), normalize(activity_description), state_key,
+                normalize(job_description), normalize(activity_description), state_key, to_bill_flag,
             )
             item = revenue_groups.setdefault(activity_key, {
                 "date": day, "person": person_raw, "job_code": job_code, "task_code": task_code,
                 "plan_code": plan_code, "job_name": job_description, "activity": activity_description,
-                "state": state_label, "customer": customer, "logged": 0.0, "billable": 0.0, "confirmed_billable": 0.0,
-                "confirmed_logged": 0.0,
+                "state": state_label, "to_bill": to_bill_flag, "customer": customer,
+                "logged": 0.0, "billable": 0.0, "confirmed_billable": 0.0, "confirmed_logged": 0.0,
             })
             logged_minutes = max(numeric(detail.get(detail_zdt_minutes)) or 0.0, 0.0) if detail_zdt_minutes else 0.0
             item["logged"] += logged_minutes / 60.0
@@ -504,7 +505,7 @@ def main():
             "Data": item["date"], "Componente": item["person"], "Codice commessa": code,
             "Codice task": item["task_code"], "Numero riga commessa": item["plan_code"],
             "Nome commessa": item["job_name"], "Dettaglio attività": item["activity"],
-            "Stato Attivita": item["state"],
+            "Stato Attivita": item["state"], "ToBill CRM": item["to_bill"],
             "Cliente": item["customer"], "Tipo attività": kind,
             "Ore Loggate": item["logged"], "Ore Confermate": item["confirmed_logged"],
             "Ore valorizzate": item["billable"], "Ore valorizzate confermate": item["confirmed_billable"],
