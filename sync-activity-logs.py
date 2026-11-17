@@ -266,31 +266,53 @@ def main():
         plan_code = normalize_code(row.get("Numero riga commessa"))
         key = (job_code, task_code, plan_code)
         candidates = jobs_by_key.get(key, [])
+        match_level = "commessa + task + riga"
         if not candidates and job_code and task_code:
             candidates = jobs_by_job_task.get((job_code, task_code), [])
+            match_level = "commessa + task"
         if not candidates and job_code and plan_code:
             candidates = jobs_by_job_plan.get((job_code, plan_code), [])
+            match_level = "commessa + riga"
         if not candidates and job_code:
             candidates = jobs_by_job.get(job_code, [])
+            match_level = "commessa"
         if not candidates:
-            return None, "Commessa/task/riga non abbinati"
+            return None, "Commessa/task/riga non abbinati", "Nessuna riga NAV corrispondente alle chiavi ZDT/CRM"
 
+        def candidate_text(item):
+            task = text_value(item.get("JobTaskNo")) or "—"
+            plan = text_value(item.get("JobPlanNo")) or "—"
+            price = numeric(item.get("Unit Price"))
+            price_text = f"{price:.2f} €" if price is not None else "tariffa assente"
+            return f"task {task} · riga {plan} · {price_text}/h"
+
+        candidate_list = "; ".join(candidate_text(item) for item in candidates[:8])
+        if len(candidates) > 8:
+            candidate_list += f"; altre {len(candidates) - 8} righe"
+        diagnostic = f"Abbinamento per {match_level}: {len(candidates)} righe candidate ({candidate_list})"
         prices = {numeric(item.get("Unit Price")) for item in candidates}
         if None in prices or len(prices) != 1:
-            return None, "Tariffa NAV non univoca"
+            reasons = []
+            if None in prices:
+                reasons.append("almeno una riga non ha tariffa")
+            if len({price for price in prices if price is not None}) > 1:
+                reasons.append("le righe hanno tariffe diverse")
+            reason = " e ".join(reasons) or "tariffa non determinabile"
+            return None, "Tariffa NAV non univoca", f"{diagnostic}. Motivo: {reason}."
         price = next(iter(prices))
         if price is None:
-            return None, "Prezzo NAV non disponibile"
+            return None, "Prezzo NAV non disponibile", f"{diagnostic}. Motivo: tariffa assente."
         logged = sum(numeric(item.get("Ore Loggate")) or 0 for item in candidates)
         invoice_hours = sum(numeric(item.get("Ore Enable Invoicing")) or 0 for item in candidates)
         enabled = any(as_bool(item.get("Enable Invoicing")) for item in candidates)
-        return {"price": price, "crm_logged": logged, "invoice_hours": invoice_hours, "enabled": enabled}, "Valorizzata"
+        return {"price": price, "crm_logged": logged, "invoice_hours": invoice_hours, "enabled": enabled}, "Valorizzata", diagnostic
 
     daily["Prezzo unitario NAV"] = 0.0
     daily["Ore valorizzate"] = 0.0
     daily["Stima fatturato"] = 0.0
     daily["Fonte ore stima"] = ""
     daily["Esito valorizzazione"] = ""
+    daily["Dettaglio tariffa NAV"] = ""
 
     detail_date = find_field(detail_frame.columns, "date")
     detail_person = find_field(detail_frame.columns, "person")
@@ -532,7 +554,7 @@ def main():
             "Codice commessa": item["job_code"], "Codice task": item["task_code"],
             "Numero riga commessa": item["plan_code"],
         }
-        match, status = resolve_job(nav_row)
+        match, status, nav_diagnostic = resolve_job(nav_row)
         price = match["price"] if match else 0.0
         code = item["job_code"]
         kind = "COIG" if code.upper().startswith("COIG") or item["job_name"].upper().startswith("COIG") or item["activity"].upper().startswith("COIG") else "Non COIG"
@@ -549,6 +571,7 @@ def main():
             "Stima fatturato confermato": item["confirmed_billable"] * price,
             "Stima fatturato da confermare": max(item["billable"] - item["confirmed_billable"], 0.0) * price,
             "Fonte ore stima": item["billable_source"], "Esito valorizzazione": status,
+            "Dettaglio tariffa NAV": nav_diagnostic,
         })
 
     status_counts = {}
@@ -570,8 +593,9 @@ def main():
 
     matched_detail_rows = 0
     for index, row in daily.iterrows():
-        match, status = resolve_job(row)
+        match, status, nav_diagnostic = resolve_job(row)
         daily.at[index, "Esito valorizzazione"] = status
+        daily.at[index, "Dettaglio tariffa NAV"] = nav_diagnostic
         if match:
             daily.at[index, "Prezzo unitario NAV"] = match["price"]
         detail_key = (
