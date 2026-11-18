@@ -442,6 +442,10 @@ def main():
     detail_crm_plan = next((column for column in detail_frame.columns if normalize(column) == "crmrigacommessa"), None)
     detail_crm_activity_id = next((column for column in detail_frame.columns if normalize(column) == "crmactivityid"), None)
     detail_crm_job_detail_id = next((column for column in detail_frame.columns if normalize(column) == "crmjobdetailid"), None)
+    detail_nav_unit_price = next((column for column in detail_frame.columns if normalize(column) == "navunitprice"), None)
+    detail_nav_match_count = next((column for column in detail_frame.columns if normalize(column) == "navmatchcount"), None)
+    detail_nav_match_status = next((column for column in detail_frame.columns if normalize(column) == "navmatchstatus"), None)
+    detail_nav_plan_description = next((column for column in detail_frame.columns if normalize(column) == "navplandescription"), None)
     detail_desc_task = next((column for column in detail_frame.columns if normalize(column) == "descrizionetask"), None)
     detail_desc_plan = next((column for column in detail_frame.columns if normalize(column) == "descrizioneriga"), None)
     detail_desc_job = next((column for column in detail_frame.columns if normalize(column) == "descrizionecommessa"), None)
@@ -600,13 +604,20 @@ def main():
                 day, person_key, normalize_code(base_job), normalize(job_description),
             )
             calendar_key = (*calendar_plan_key, normalize(activity_description))
+            nav_price = numeric(detail.get(detail_nav_unit_price)) if detail_nav_unit_price else None
+            nav_match_count = numeric(detail.get(detail_nav_match_count)) if detail_nav_match_count else None
+            nav_match_status = text_value(detail.get(detail_nav_match_status)) if detail_nav_match_status else ""
+            nav_plan_description = text_value(detail.get(detail_nav_plan_description)) if detail_nav_plan_description else ""
             activity_key = (
                 day, person_key, normalize_code(job_code), normalize_code(task_code), normalize_code(plan_code),
-                normalize(job_description), normalize(activity_description), state_key, to_bill_flag, crm_activity_id, crm_job_detail_id, billable_source,
+                normalize(job_description), normalize(activity_description), state_key, to_bill_flag, crm_activity_id, crm_job_detail_id,
+                nav_price, nav_match_count, nav_match_status, nav_plan_description, billable_source,
             )
             item = revenue_groups.setdefault(activity_key, {
                 "date": day, "person": person_raw, "job_code": job_code, "task_code": task_code,
                 "plan_code": plan_code, "job_name": job_description, "activity": activity_description,
+                "nav_price": nav_price, "nav_match_count": nav_match_count,
+                "nav_match_status": nav_match_status, "nav_plan_description": nav_plan_description,
                 "state": state_label, "to_bill": to_bill_flag, "crm_activity_id": crm_activity_id, "crm_job_detail_id": crm_job_detail_id, "customer": customer,
                 "logged": 0.0, "billable": 0.0, "confirmed_billable": 0.0, "confirmed_logged": 0.0,
                 "billable_source": billable_source, "calendar_key": calendar_key,
@@ -622,6 +633,7 @@ def main():
         state_counts = detail_frame[detail_zdt_state].fillna("(vuoto)").astype(str).value_counts().head(12).to_dict()
         print(f"Distribuzione aggregata degli stati ZDT: {state_counts}")
     revenue_records = []
+    nav_matches_by_zdt_activity = {}
     nav_matches_by_calendar_activity = {}
     nav_matches_by_calendar_plan = {}
     for item in revenue_groups.values():
@@ -631,7 +643,23 @@ def main():
             "CRM Job Detail ID": item["crm_job_detail_id"],
             "Nome commessa": item["job_name"], "Dettaglio attività": item["activity"],
         }
-        match, status, nav_diagnostic = resolve_job(nav_row)
+        upstream_price = item["nav_price"]
+        upstream_match_count = item["nav_match_count"]
+        if upstream_match_count == 1 and upstream_price is not None:
+            match = {"price": upstream_price}
+            status = "Valorizzata"
+            nav_diagnostic = (
+                "Tariffa associata dal dettaglio ZDT · match NAV univoco"
+                + (f" · {item['nav_plan_description']}" if item["nav_plan_description"] else "")
+            )
+        else:
+            match, status, nav_diagnostic = resolve_job(nav_row)
+        zdt_activity_key = (
+            item["date"], normalize_person(item["person"]), normalize_code(item["job_code"]),
+            normalize_code(item["task_code"]), normalize_code(item["plan_code"]),
+        )
+        if all(zdt_activity_key):
+            nav_matches_by_zdt_activity.setdefault(zdt_activity_key, []).append((match, status, nav_diagnostic))
         if all(item["calendar_plan_key"]):
             nav_matches_by_calendar_plan.setdefault(item["calendar_plan_key"], []).append((match, status, nav_diagnostic))
             if item["calendar_key"][-1]:
@@ -690,7 +718,9 @@ def main():
             normalize(text_value(row.get("Nome commessa"))),
         )
         calendar_key = (*calendar_plan_key, normalize(text_value(row.get("Dettaglio attività"))))
-        matched_nav = nav_matches_by_calendar_activity.get(calendar_key, [])
+        matched_nav = nav_matches_by_zdt_activity.get(detail_key, [])
+        if not matched_nav:
+            matched_nav = nav_matches_by_calendar_activity.get(calendar_key, [])
         if not matched_nav:
             matched_nav = nav_matches_by_calendar_plan.get(calendar_plan_key, [])
         if matched_nav:
