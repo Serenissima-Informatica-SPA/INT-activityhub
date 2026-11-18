@@ -65,25 +65,36 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
   const pricesByJobKey = new Map<string, Set<number>>();
   const pricesByJob = new Map<string, Set<number>>();
   revenueRecords.forEach((row) => {
-    const price = number(row["Prezzo unitario NAV"]);
-    if (price <= 0) return;
+    const rawPrice = row["Prezzo unitario NAV"];
+    const status = String(row["Esito valorizzazione"] ?? "");
+    // Zero is a valid NAV tariff. Keep it for valued rows; exclude unresolved
+    // rows whose zero is only a placeholder for a missing/ambiguous price.
+    if (status !== "Valorizzata" || rawPrice == null || String(rawPrice).trim() === "") return;
+    const price = Math.max(number(rawPrice), 0);
     const job = norm(row["Codice commessa"]);
-    const exactKey = [job, norm(row["Codice task"]), norm(row["Numero riga commessa"])].join("|");
+    const task = norm(row["Codice task"]);
+    const plan = norm(row["Numero riga commessa"]);
+    const exactKey = [job, task, plan].join("|");
     if (job) {
       if (!pricesByJob.has(job)) pricesByJob.set(job, new Set());
       pricesByJob.get(job)!.add(price);
     }
-    if (job && exactKey !== "||") {
+    if (job && task && plan) {
       if (!pricesByJobKey.has(exactKey)) pricesByJobKey.set(exactKey, new Set());
       pricesByJobKey.get(exactKey)!.add(price);
     }
   });
   const confirmedNavPrice = (row: Row) => {
-    const ownPrice = Math.max(number(row["Prezzo unitario NAV"]), 0);
-    if (ownPrice > 0) return ownPrice;
+    const rawOwnPrice = row["Prezzo unitario NAV"];
+    const ownStatus = String(row["Esito valorizzazione"] ?? "");
+    if (ownStatus === "Valorizzata" && rawOwnPrice != null && String(rawOwnPrice).trim() !== "") {
+      return Math.max(number(rawOwnPrice), 0);
+    }
     const job = norm(row["Codice commessa"]);
-    const exactKey = [job, norm(row["Codice task"]), norm(row["Numero riga commessa"])].join("|");
-    const exactPrices = pricesByJobKey.get(exactKey);
+    const task = norm(row["Codice task"]);
+    const plan = norm(row["Numero riga commessa"]);
+    const exactKey = [job, task, plan].join("|");
+    const exactPrices = job && task && plan ? pricesByJobKey.get(exactKey) : undefined;
     if (exactPrices?.size === 1) return [...exactPrices][0];
     const jobPrices = pricesByJob.get(job);
     return jobPrices?.size === 1 ? [...jobPrices][0] : 0;
