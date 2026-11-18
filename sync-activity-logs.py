@@ -636,6 +636,7 @@ def main():
         print(f"Distribuzione aggregata degli stati ZDT: {state_counts}")
     revenue_records = []
     nav_matches_by_zdt_activity = {}
+    nav_matches_by_job_task_plan = {}
     nav_matches_by_calendar_activity = {}
     nav_matches_by_calendar_plan = {}
     for item in revenue_groups.values():
@@ -662,6 +663,13 @@ def main():
         )
         if all(zdt_activity_key):
             nav_matches_by_zdt_activity.setdefault(zdt_activity_key, []).append((match, status, nav_diagnostic))
+        job_task_plan_key = (
+            normalize_code(item["job_code"]),
+            normalize_code(item["task_code"]),
+            normalize_code(item["plan_code"]),
+        )
+        if all(job_task_plan_key):
+            nav_matches_by_job_task_plan.setdefault(job_task_plan_key, []).append((match, status, nav_diagnostic))
         if all(item["calendar_plan_key"]):
             nav_matches_by_calendar_plan.setdefault(item["calendar_plan_key"], []).append((match, status, nav_diagnostic))
             if item["calendar_key"][-1]:
@@ -721,6 +729,11 @@ def main():
         )
         calendar_key = (*calendar_plan_key, normalize(text_value(row.get("Dettaglio attività"))))
         matched_nav = nav_matches_by_zdt_activity.get(detail_key, [])
+        if not matched_nav:
+            # La tariffa NAV è legata alla riga commessa, non alla singola data/persona.
+            # Il feed economico può quindi trasferirla al calendario tramite la chiave ZDT.
+            zdt_job_task_plan_key = (detail_key[2], detail_key[3], detail_key[4])
+            matched_nav = nav_matches_by_job_task_plan.get(zdt_job_task_plan_key, [])
         if not matched_nav:
             matched_nav = nav_matches_by_calendar_activity.get(calendar_key, [])
         if not matched_nav:
