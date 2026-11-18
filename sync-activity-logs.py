@@ -94,6 +94,24 @@ def normalize_code(value):
     return normalize(text)
 
 
+def find_zdt_field(columns, kind):
+    """Prefer ZDT task/plan identifiers over similarly named CRM fields."""
+    aliases = {
+        "task_code": ("task", "codicetask", "jobtaskno", "taskno", "tasknumber", "zdttask", "taskzdt"),
+        "plan_code": ("rigacommessa", "numerorigacommessa", "jobplanno", "planno", "zdtrigacommessa", "rigacommessazdt", "planline"),
+    }[kind]
+    non_crm = [(column, normalize(column)) for column in columns if "crm" not in normalize(column)]
+    for alias in aliases:
+        exact = [column for column, normalized in non_crm if normalized == alias]
+        if exact:
+            return exact[0]
+    for alias in aliases:
+        match = next((column for column, normalized in non_crm if alias in normalized), None)
+        if match:
+            return match
+    return find_field(columns, kind)
+
+
 def numeric(value):
     try:
         parsed = pd.to_numeric(value, errors="coerce")
@@ -172,6 +190,10 @@ def main():
     date_field = find_field(frame.columns, "date")
     person_field = find_field(frame.columns, "person")
     fields = {kind: find_field(frame.columns, kind) for kind in FIELD_CANDIDATES if kind not in ("date", "person")}
+    # Quando i feed espongono sia chiavi CRM sia chiavi della riga ZDT,
+    # non lasciare che la ricerca parziale scelga prima il campo CRM.
+    fields["task_code"] = find_zdt_field(frame.columns, "task_code")
+    fields["plan_code"] = find_zdt_field(frame.columns, "plan_code")
     if not date_field or not person_field or not fields["hours"] or not fields["confirmed_hours"]:
         raise ValueError(f"Colonne necessarie non individuate; campi trovati: {list(frame.columns)}")
 
@@ -358,8 +380,8 @@ def main():
     detail_date = find_field(detail_frame.columns, "date")
     detail_person = find_field(detail_frame.columns, "person")
     detail_job = find_field(detail_frame.columns, "job_code")
-    detail_task = find_field(detail_frame.columns, "task_code")
-    detail_plan = find_field(detail_frame.columns, "plan_code")
+    detail_task = find_zdt_field(detail_frame.columns, "task_code")
+    detail_plan = find_zdt_field(detail_frame.columns, "plan_code")
     detail_billable = next(
         (column for column in detail_frame.columns if normalize(column) in {"orefatturabili", "billablehours"}),
         None,
