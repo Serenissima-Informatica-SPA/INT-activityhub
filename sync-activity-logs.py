@@ -535,9 +535,12 @@ def main():
         base_job = text_value(detail.get(detail_job))
         base_task = text_value(detail.get(detail_task))
         base_plan = text_value(detail.get(detail_plan))
-        job_code = (text_value(detail.get(detail_crm_job)) if detail_crm_job else "") or base_job
-        task_code = (text_value(detail.get(detail_crm_task)) if detail_crm_task else "") or base_task
-        plan_code = (text_value(detail.get(detail_crm_plan)) if detail_crm_plan else "") or base_plan
+        # Per la tariffa NAV usiamo come chiave primaria i codici dell'attività ZDT.
+        # I riferimenti CRM sono un fallback: possono descrivere un'associazione CRM diversa
+        # dalla riga di pianificazione NAV a cui l'attività ZDT è stata assegnata.
+        job_code = base_job or (text_value(detail.get(detail_crm_job)) if detail_crm_job else "")
+        task_code = base_task or (text_value(detail.get(detail_crm_task)) if detail_crm_task else "")
+        plan_code = base_plan or (text_value(detail.get(detail_crm_plan)) if detail_crm_plan else "")
         base_key = (day, person_key, normalize_code(base_job), normalize_code(base_task), normalize_code(base_plan))
         state_label = text_value(detail.get(detail_zdt_state)) if detail_zdt_state else ""
         state_key = normalize(state_label)
