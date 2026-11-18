@@ -630,7 +630,7 @@ def main():
             normalize_code(row.get("Codice commessa")),
             normalize(text_value(row.get("Nome commessa"))),
         )
-        calendar_key = (*calendar_plan_key, normalize(text_value(row.get("Dettaglio attività")))
+        calendar_key = (*calendar_plan_key, normalize(text_value(row.get("Dettaglio attività"))))
         matched_nav = nav_matches_by_calendar_activity.get(calendar_key, [])
         if not matched_nav:
             matched_nav = nav_matches_by_calendar_plan.get(calendar_plan_key, [])
