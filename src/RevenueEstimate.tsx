@@ -43,8 +43,16 @@ const CANCELED_STATES = new Set(["cancellata", "canceled", "cancelled", "annulla
 function isCanceledRow(row: Row) {
   return CANCELED_STATES.has(norm(row["Stato Attivita"]));
 }
+function toBillFlag(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (value == null || String(value).trim() === "") return null;
+  const normalized = norm(value);
+  if (["true", "1", "si", "yes", "y"].includes(normalized)) return true;
+  if (["false", "0", "no", "n"].includes(normalized)) return false;
+  return null;
+}
 
-export default function RevenueEstimate({ records, revenueRecords = [], person, group, groupMembers, monthPrefix, todayKey }: {
+export default function RevenueEstimate({ revenueRecords = [], person, group, groupMembers, monthPrefix, todayKey }: {
   records: Row[];
   revenueRecords?: Row[];
   person: string;
@@ -60,11 +68,19 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
   const resolvedGroupMembers = Array.isArray(groupMembers) && groupMembers.length > 0
     ? groupMembers
     : TEAM_MEMBERS[resolvedGroup];
+  // La valorizzazione economica ammette solo attività con ToBill esplicitamente TRUE in ZDT.
+  // I valori FALSE o mancanti non vengono usati per ore, tariffe o fatturato.
+  const billableRevenueRecords = revenueRecords.filter((row) => toBillFlag(row["ToBill CRM"]) === true);
+  const selectedMonthRecords = revenueRecords.filter((row) =>
+    norm(row.Componente) === norm(person) && String(row.Data ?? "").slice(0, 10).startsWith(monthPrefix)
+  );
+  const excludedToBillFalseCount = selectedMonthRecords.filter((row) => toBillFlag(row["ToBill CRM"]) === false).length;
+  const missingToBillCount = selectedMonthRecords.filter((row) => toBillFlag(row["ToBill CRM"]) == null).length;
   // Recupera la tariffa NAV dal dettaglio economico anche quando il riepilogo
   // giornaliero non ha ereditato il prezzo dalla riga CRM/NAV.
   const pricesByJobKey = new Map<string, Set<number>>();
   const pricesByJob = new Map<string, Set<number>>();
-  revenueRecords.forEach((row) => {
+  billableRevenueRecords.forEach((row) => {
     const rawPrice = row["Prezzo unitario NAV"];
     const status = String(row["Esito valorizzazione"] ?? "");
     // Zero is a valid NAV tariff. Keep it for valued rows; exclude unresolved
@@ -99,9 +115,9 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
     const jobPrices = pricesByJob.get(job);
     return jobPrices?.size === 1 ? [...jobPrices][0] : 0;
   };
-  // L'effettivo usa il riepilogo giornaliero: ore confermate ZDT × tariffa NAV.
-  // Il dettaglio CRM resta la fonte delle attività pianificate future.
-  const confirmedActuals = records.flatMap((row) => {
+  // Per la sola parte economica usiamo il dettaglio ZDT con ToBill=true.
+  // Le quantità Enable Invoice prevalgono quando presenti; altrimenti valgono le ore ZDT.
+  const confirmedActuals = billableRevenueRecords.flatMap((row) => {
     const day = String(row.Data ?? "").slice(0, 10);
     const confirmed = Math.max(hours(row["Ore Confermate"]), 0);
     const billableConfirmed = Math.max(hours(row["Ore valorizzate confermate"] ?? row["Ore Confermate"]), 0);
@@ -117,16 +133,16 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       "Categoria valorizzazione": "Effettivo",
       "Stima fatturato": revenue,
       "Stima fatturato confermato": revenue,
-      "Fonte ore stima": "Quota confermata · Enable Invoice o ZDT × tariffa NAV",
+      "Fonte ore stima": "Quota confermata ToBill · Enable Invoice o ZDT × tariffa NAV",
       "Esito valorizzazione": price > 0 ? "Valorizzata" : String(row["Esito valorizzazione"] ?? "Tariffa NAV non disponibile"),
-      "ToBill CRM": null
+      "ToBill CRM": true
     }];
   });
   // Il previsto segue le ore presenti nel calendario ZDT; CRM serve solo
   // a recuperare la tariffa NAV quando il riepilogo giornaliero non la include.
-  const plannedZdtRecords = records.flatMap((row) => {
+  const plannedZdtRecords = billableRevenueRecords.flatMap((row) => {
     const day = String(row.Data ?? "").slice(0, 10);
-    const plannedHours = Math.max(hours(row["Ore valorizzate"] ?? row["Ore Loggate"] ?? row.Ore), 0);
+    const plannedHours = Math.max(hours(row["Ore valorizzate"]), 0);
     const price = confirmedNavPrice(row);
     if (!day || day <= todayKey || plannedHours <= 0 || isCanceledRow(row)) return [];
     const revenue = plannedHours * price;
@@ -140,12 +156,12 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       "Stima fatturato confermato": 0,
       "Fonte ore stima": "Pianificate · Enable Invoice o ZDT × tariffa NAV",
       "Esito valorizzazione": price > 0 ? "Valorizzata" : String(row["Esito valorizzazione"] ?? "Tariffa NAV non disponibile"),
-      "ToBill CRM": null
+      "ToBill CRM": true
     }];
   });
-  const unconfirmedZdtRecords = records.flatMap((row) => {
+  const unconfirmedZdtRecords = billableRevenueRecords.flatMap((row) => {
     const day = String(row.Data ?? "").slice(0, 10);
-    const unconfirmedLogged = Math.max(hours(row["Ore Non Confermate"]), 0);
+    const unconfirmedLogged = Math.max(hours(row["Ore Loggate"]) - hours(row["Ore Confermate"]), 0);
     const price = confirmedNavPrice(row);
     const billableUnconfirmed = Math.max(hours(row["Ore valorizzate da confermare"] ?? unconfirmedLogged), 0);
     if (!day || day > todayKey || unconfirmedLogged <= 0 || billableUnconfirmed <= 0 || isCanceledRow(row)) return [];
@@ -162,7 +178,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       "Stima fatturato confermato": 0,
       "Fonte ore stima": "Non confermate · Enable Invoice o ZDT × tariffa NAV",
       "Esito valorizzazione": price > 0 ? "Valorizzata" : String(row["Esito valorizzazione"] ?? "Tariffa NAV non disponibile"),
-      "ToBill CRM": null
+      "ToBill CRM": true
     }];
   });
   const financialRecords = [...confirmedActuals, ...unconfirmedZdtRecords, ...plannedZdtRecords];
@@ -180,8 +196,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       const navDiagnostic = String(row["Dettaglio tariffa NAV"] ?? "");
       const source = String(row["Fonte ore stima"] ?? "—");
       const kind = String(row["Tipo attività"] ?? "").toUpperCase();
-      const rawToBill = row["ToBill CRM"];
-      const toBill = typeof rawToBill === "boolean" ? rawToBill : rawToBill == null || rawToBill === "" ? null : ["true", "1", "si", "yes", "y"].includes(norm(rawToBill));
+      const toBill = toBillFlag(row["ToBill CRM"]);
       const state = String(row["Stato Attivita"] ?? "").trim();
       const crmActivityId = String(row["CRM Activity ID"] ?? "").trim();
       const logged = hours(row["Ore Loggate"] ?? row.Ore);
@@ -283,7 +298,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
     <section className="revenue-panel" aria-label="Stima del fatturato">
       <header className="revenue-header">
         <div><p className="revenue-eyebrow">CRM · NAV</p><h2>Stima del fatturato</h2><p>{person} · {monthPrefix} · attività registrate fino a oggi</p></div>
-        <span>{valuedCount} voci valorizzate{unresolved.length ? ` · ${unresolved.length} da verificare` : ""}</span>
+        <span>{valuedCount} voci valorizzate{unresolved.length ? ` · ${unresolved.length} da verificare` : ""}{excludedToBillFalseCount ? ` · ${excludedToBillFalseCount} escluse (ToBill = FALSE)` : ""}{missingToBillCount ? ` · ${missingToBillCount} senza ToBill` : ""}</span>
       </header>
       <div className="revenue-kpis">
         <article><span>Fatturato effettivo</span><strong>{eur(totals.revenue)}</strong><small>Ore fatturabili delle attività fino a oggi</small></article>
@@ -332,7 +347,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
           <div className="revenue-section-heading"><div><h3>Dettaglio commesse</h3><p>Valorizzazione delle ore per commessa e attività</p></div><span>{lines.length} voci</span></div>
           {lines.length === 0 ? <p className="revenue-empty">Non risultano attività registrate nel periodo selezionato.</p> :
             <div className="revenue-table-wrap"><table>
-              <thead><tr><th>Esito</th><th>Cliente</th><th>Commessa / attività</th><th>Tipo</th><th>Stato ZDT</th><th>ID CRM</th><th>Ore loggate</th><th>Ore confermate</th><th>ToBill CRM</th><th>Ore valorizzate</th><th>Tariffa NAV</th><th>Stima</th></tr></thead>
+              <thead><tr><th>Esito</th><th>Cliente</th><th>Commessa / attività</th><th>Tipo</th><th>Stato ZDT</th><th>ID CRM</th><th>Ore loggate</th><th>Ore confermate</th><th>ToBill ZDT</th><th>Ore valorizzate</th><th>Tariffa NAV</th><th>Stima</th></tr></thead>
               <tbody>{lines.map((line, index) => <tr key={`${line.customer}|${line.code}|${line.activity}|${index}`} className={line.match === "Valorizzata" ? "" : "revenue-unresolved"}>
                 <td><span className={line.match === "Valorizzata" ? "revenue-badge" : "revenue-badge unresolved"}>{line.match}</span>{line.source !== "—" && <small className="revenue-source">{line.source}</small>}{line.navDiagnostic && line.match !== "Valorizzata" && <small className="revenue-source">{line.navDiagnostic}</small>}</td>
                 <td>{line.customer}</td><td><strong>{line.code || "—"}</strong><small>{[line.job, line.activity].filter(Boolean).join(" · ")}</small></td>
@@ -345,3 +360,4 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
     </section>
   );
 }
+
