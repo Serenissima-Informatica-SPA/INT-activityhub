@@ -165,62 +165,7 @@ export default function RevenueEstimate({ records, revenueRecords = [], person, 
       "ToBill CRM": null
     }];
   });
-  const legacyFinancialRecords = [...confirmedActuals, ...unconfirmedZdtRecords, ...plannedZdtRecords];
-  // Per la vista economica usa il dettaglio ZDT: il riepilogo calendario può
-  // aggregare la commessa e perdere task/riga, necessari per la tariffa NAV.
-  const detailedFinancialRecords = revenueRecords.flatMap((row) => {
-    const day = String(row.Data ?? "").slice(0, 10);
-    if (!day || isCanceledRow(row)) return [];
-    const logged = Math.max(hours(row["Ore Loggate"]), 0);
-    const confirmedLogged = Math.max(hours(row["Ore Confermate"]), 0);
-    const billable = Math.max(hours(row["Ore valorizzate"]), 0);
-    const confirmedBillable = Math.min(
-      billable,
-      Math.max(hours(row["Ore valorizzate confermate"] ?? row["Ore Confermate"]), 0)
-    );
-    const unconfirmedBillable = Math.min(
-      Math.max(billable - confirmedBillable, 0),
-      Math.max(hours(row["Ore valorizzate da confermare"] ?? (billable - confirmedBillable)), 0)
-    );
-    const price = Math.max(number(row["Prezzo unitario NAV"]), 0);
-    const match = String(row["Esito valorizzazione"] ?? "Dati di valorizzazione non disponibili");
-    const common = { ...row, "Prezzo unitario NAV": price, "ToBill CRM": row["ToBill CRM"] ?? null };
-    if (day <= todayKey) {
-      const actual = confirmedBillable > 0 ? [{
-        ...common,
-        "Ore Loggate": confirmedLogged,
-        "Ore Confermate": confirmedLogged,
-        "Ore valorizzate": confirmedBillable,
-        "Ore valorizzate confermate": confirmedBillable,
-        "Categoria valorizzazione": "Effettivo",
-        "Stima fatturato": confirmedBillable * price,
-        "Fonte ore stima": "Quota confermata ZDT · Enable Invoice o ore ZDT × tariffa NAV",
-      }] : [];
-      const unconfirmed = unconfirmedBillable > 0 ? [{
-        ...common,
-        "Ore Loggate": Math.max(logged - confirmedLogged, 0),
-        "Ore Confermate": 0,
-        "Ore valorizzate": unconfirmedBillable,
-        "Ore valorizzate confermate": 0,
-        "Categoria valorizzazione": "Da confermare",
-        "Stima fatturato": unconfirmedBillable * price,
-        "Fonte ore stima": "Quota da confermare ZDT · Enable Invoice o ore ZDT × tariffa NAV",
-      }] : [];
-      return [...actual, ...unconfirmed];
-    }
-    if (billable <= 0) return [];
-    return [{
-      ...common,
-      "Ore valorizzate": billable,
-      "Ore valorizzate confermate": 0,
-      "Categoria valorizzazione": "Pianificato",
-      "Stima fatturato": billable * price,
-      "Fonte ore stima": "Pianificate ZDT · Enable Invoice o ore ZDT × tariffa NAV",
-    }];
-  });
-  const financialRecords = detailedFinancialRecords.length > 0
-    ? detailedFinancialRecords
-    : legacyFinancialRecords;
+  const financialRecords = [...confirmedActuals, ...unconfirmedZdtRecords, ...plannedZdtRecords];
   const lines = useMemo(() => {
     const grouped = new Map<string, RevenueLine>();
     financialRecords.forEach((row) => {
