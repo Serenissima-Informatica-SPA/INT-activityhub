@@ -538,10 +538,10 @@ def main():
             customer = customer_by_job.get(normalize(job_code), "") or customer_by_job.get(normalize(base_job), "")
             crm_activity_id = text_value(detail.get(detail_crm_activity_id)) if detail_crm_activity_id else ""
             crm_job_detail_id = text_value(detail.get(detail_crm_job_detail_id)) if detail_crm_job_detail_id else ""
-            calendar_key = (
-                day, person_key, normalize_code(base_job),
-                normalize(job_description), normalize(activity_description),
+            calendar_plan_key = (
+                day, person_key, normalize_code(base_job), normalize(job_description),
             )
+            calendar_key = (*calendar_plan_key, normalize(activity_description))
             activity_key = (
                 day, person_key, normalize_code(job_code), normalize_code(task_code), normalize_code(plan_code),
                 normalize(job_description), normalize(activity_description), state_key, to_bill_flag, crm_activity_id, crm_job_detail_id, billable_source,
@@ -552,6 +552,7 @@ def main():
                 "state": state_label, "to_bill": to_bill_flag, "crm_activity_id": crm_activity_id, "crm_job_detail_id": crm_job_detail_id, "customer": customer,
                 "logged": 0.0, "billable": 0.0, "confirmed_billable": 0.0, "confirmed_logged": 0.0,
                 "billable_source": billable_source, "calendar_key": calendar_key,
+                "calendar_plan_key": calendar_plan_key,
             })
             item["logged"] += logged_minutes / 60.0
             item["billable"] += billable_hours
@@ -564,6 +565,7 @@ def main():
         print(f"Distribuzione aggregata degli stati ZDT: {state_counts}")
     revenue_records = []
     nav_matches_by_calendar_activity = {}
+    nav_matches_by_calendar_plan = {}
     for item in revenue_groups.values():
         nav_row = {
             "Codice commessa": item["job_code"], "Codice task": item["task_code"],
@@ -571,8 +573,10 @@ def main():
             "CRM Job Detail ID": item["crm_job_detail_id"],
         }
         match, status, nav_diagnostic = resolve_job(nav_row)
-        if all(item["calendar_key"]):
-            nav_matches_by_calendar_activity.setdefault(item["calendar_key"], []).append((match, status, nav_diagnostic))
+        if all(item["calendar_plan_key"]):
+            nav_matches_by_calendar_plan.setdefault(item["calendar_plan_key"], []).append((match, status, nav_diagnostic))
+            if item["calendar_key"][-1]:
+                nav_matches_by_calendar_activity.setdefault(item["calendar_key"], []).append((match, status, nav_diagnostic))
         price = match["price"] if match else 0.0
         code = item["job_code"]
         kind = "COIG" if code.upper().startswith("COIG") or item["job_name"].upper().startswith("COIG") or item["activity"].upper().startswith("COIG") else "Non COIG"
@@ -620,14 +624,16 @@ def main():
             normalize_code(row.get("Codice task")),
             normalize_code(row.get("Numero riga commessa")),
         )
-        calendar_key = (
+        calendar_plan_key = (
             detail_day(row.get(date_field)),
             normalize_person(row.get(person_field, "")),
             normalize_code(row.get("Codice commessa")),
             normalize(text_value(row.get("Nome commessa"))),
-            normalize(text_value(row.get("Dettaglio attività"))),
         )
+        calendar_key = (*calendar_plan_key, normalize(text_value(row.get("Dettaglio attività")))
         matched_nav = nav_matches_by_calendar_activity.get(calendar_key, [])
+        if not matched_nav:
+            matched_nav = nav_matches_by_calendar_plan.get(calendar_plan_key, [])
         if matched_nav:
             nav_calendar_matches += 1
             matched_prices = {entry[0]["price"] for entry in matched_nav if entry[0]}
