@@ -74,7 +74,8 @@ export default function RevenueEstimate({ revenueRecords = [], person, group, gr
   const selectedMonthRecords = revenueRecords.filter((row) =>
     norm(row.Componente) === norm(person) && String(row.Data ?? "").slice(0, 10).startsWith(monthPrefix)
   );
-  const excludedToBillFalseCount = selectedMonthRecords.filter((row) => toBillFlag(row["ToBill CRM"]) === false).length;
+  const excludedToBillFalseRecords = selectedMonthRecords.filter((row) => toBillFlag(row["ToBill CRM"]) === false);
+  const excludedToBillFalseCount = excludedToBillFalseRecords.length;
   const missingToBillCount = selectedMonthRecords.filter((row) => toBillFlag(row["ToBill CRM"]) == null).length;
   // Recupera la tariffa NAV dal dettaglio economico anche quando il riepilogo
   // giornaliero non ha ereditato il prezzo dalla riga CRM/NAV.
@@ -356,6 +357,19 @@ export default function RevenueEstimate({ revenueRecords = [], person, group, gr
             </table></div>}
         </section>
       </div>
+      {excludedToBillFalseRecords.length > 0 && <details className="revenue-excluded-details">
+        <summary>Mostra attività escluse dalla valorizzazione perché ToBill = FALSE ({excludedToBillFalseRecords.length})</summary>
+        <div className="revenue-table-wrap"><table>
+          <thead><tr><th>Data ZDT</th><th>Cliente</th><th>Commessa / attività</th><th>Ore confermate ZDT</th><th>ToBill ZDT</th></tr></thead>
+          <tbody>{excludedToBillFalseRecords.map((row, index) => <tr key={`${row.Data}|${row["Codice commessa"]}|${row["Codice task"]}|${row["Numero riga commessa"]}|${index}`}>
+            <td>{String(row.Data ?? "").slice(0, 10)}</td>
+            <td>{String(row.Cliente ?? "Cliente non disponibile")}</td>
+            <td><strong>{String(row["Codice commessa"] ?? "—")}</strong><small>{String(row["Dettaglio attività"] ?? row["Nome commessa"] ?? "")}</small></td>
+            <td>{fmt(hours(row["Ore Confermate"]))} h</td>
+            <td>No</td>
+          </tr>)}</tbody>
+        </table></div>
+      </details>}
       <footer className="revenue-footnote">Le attività e le ore seguono il calendario ZDT. Le ore confermate sono effettive; le ore loggate ma non confermate e le ore pianificate sono previste. Il valore usa le ore Enable Invoice quando disponibili, altrimenti tutte le ore ZDT, moltiplicate per la tariffa NAV. La stima non è un importo fatturato.</footer>
     </section>
   );
