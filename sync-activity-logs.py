@@ -791,6 +791,16 @@ def main():
         else:
             daily.at[index, "Esito valorizzazione"] = status
 
+    diagnostic_mask = (
+        daily[person_field].astype(str).map(normalize_person).eq(normalize_person("Favero Matteo"))
+        & daily["Codice commessa"].map(normalize_code).isin({"co26001091", "co26003556"})
+    )
+    diagnostic_rows = daily.loc[diagnostic_mask, [
+        date_field, person_field, "Codice commessa", "Codice task", "Numero riga commessa",
+        "Ore Loggate", "Ore Confermate", "Prezzo unitario NAV", "Esito valorizzazione", "Dettaglio tariffa NAV",
+    ]].drop_duplicates()
+    for _, diagnostic_row in diagnostic_rows.iterrows():
+        print("Output NAV Favero:", {str(k): text_value(v) for k, v in diagnostic_row.items()})
     if len(daily) and matched_detail_rows == 0:
         raise ValueError("Nessuna riga giornaliera abbinata al nuovo dettaglio CRM; verificare le chiavi")
 
