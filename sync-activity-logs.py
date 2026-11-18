@@ -243,6 +243,7 @@ def main():
     jobs_path = Path("public/jobs.json")
     jobs = json.loads(jobs_path.read_text(encoding="utf-8")) if jobs_path.exists() else []
     jobs_by_key = {}
+    jobs_by_detail_id = {}
     jobs_by_job_task = {}
     jobs_by_job_plan = {}
     jobs_by_job = {}
@@ -251,6 +252,9 @@ def main():
         task_code = normalize_code(job.get("JobTaskNo"))
         plan_code = normalize_code(job.get("JobPlanNo"))
         key = (job_code, task_code, plan_code)
+        detail_id = normalize_code(job.get("job_jobdetailid"))
+        if detail_id:
+            jobs_by_detail_id.setdefault(detail_id, []).append(job)
         if job_code:
             jobs_by_job.setdefault(job_code, []).append(job)
         if job_code and task_code:
@@ -265,8 +269,12 @@ def main():
         task_code = normalize_code(row.get("Codice task"))
         plan_code = normalize_code(row.get("Numero riga commessa"))
         key = (job_code, task_code, plan_code)
-        candidates = jobs_by_key.get(key, [])
-        match_level = "commessa + task + riga"
+        crm_detail_id = normalize_code(row.get("CRM Job Detail ID"))
+        candidates = jobs_by_detail_id.get(crm_detail_id, []) if crm_detail_id else []
+        match_level = "CRM Job Detail ID"
+        if not candidates:
+            candidates = jobs_by_key.get(key, [])
+            match_level = "commessa + task + riga"
         if not candidates and job_code and task_code:
             candidates = jobs_by_job_task.get((job_code, task_code), [])
             match_level = "commessa + task"
@@ -378,6 +386,7 @@ def main():
     detail_crm_task = next((column for column in detail_frame.columns if normalize(column) == "crmtask"), None)
     detail_crm_plan = next((column for column in detail_frame.columns if normalize(column) == "crmrigacommessa"), None)
     detail_crm_activity_id = next((column for column in detail_frame.columns if normalize(column) == "crmactivityid"), None)
+    detail_crm_job_detail_id = next((column for column in detail_frame.columns if normalize(column) == "crmjobdetailid"), None)
     detail_desc_task = next((column for column in detail_frame.columns if normalize(column) == "descrizionetask"), None)
     detail_desc_plan = next((column for column in detail_frame.columns if normalize(column) == "descrizioneriga"), None)
     detail_desc_job = next((column for column in detail_frame.columns if normalize(column) == "descrizionecommessa"), None)
@@ -528,16 +537,17 @@ def main():
                 activity_description = text_value(detail.get("Attivita")) or text_value(detail.get("Descrizione Attivita"))
             customer = customer_by_job.get(normalize(job_code), "") or customer_by_job.get(normalize(base_job), "")
             crm_activity_id = text_value(detail.get(detail_crm_activity_id)) if detail_crm_activity_id else ""
+            crm_job_detail_id = text_value(detail.get(detail_crm_job_detail_id)) if detail_crm_job_detail_id else ""
             activity_key = (
                 day, person_key, normalize_code(job_code), normalize_code(task_code), normalize_code(plan_code),
-                normalize(job_description), normalize(activity_description), state_key, to_bill_flag, crm_activity_id, billable_source,
+                normalize(job_description), normalize(activity_description), state_key, to_bill_flag, crm_activity_id, crm_job_detail_id, billable_source,
             )
             item = revenue_groups.setdefault(activity_key, {
                 "date": day, "person": person_raw, "job_code": job_code, "task_code": task_code,
                 "plan_code": plan_code, "job_name": job_description, "activity": activity_description,
-                "state": state_label, "to_bill": to_bill_flag, "crm_activity_id": crm_activity_id, "customer": customer,
+                "state": state_label, "to_bill": to_bill_flag, "crm_activity_id": crm_activity_id, "crm_job_detail_id": crm_job_detail_id, "customer": customer,
                 "logged": 0.0, "billable": 0.0, "confirmed_billable": 0.0, "confirmed_logged": 0.0,
-                "billable_source": billable_source,
+                "billable_source": billable_source, "base_key": base_key,
             })
             item["logged"] += logged_minutes / 60.0
             item["billable"] += billable_hours
@@ -549,12 +559,16 @@ def main():
         state_counts = detail_frame[detail_zdt_state].fillna("(vuoto)").astype(str).value_counts().head(12).to_dict()
         print(f"Distribuzione aggregata degli stati ZDT: {state_counts}")
     revenue_records = []
+    nav_matches_by_activity = {}
     for item in revenue_groups.values():
         nav_row = {
             "Codice commessa": item["job_code"], "Codice task": item["task_code"],
             "Numero riga commessa": item["plan_code"],
+            "CRM Job Detail ID": item["crm_job_detail_id"],
         }
         match, status, nav_diagnostic = resolve_job(nav_row)
+        if all(item["base_key"]):
+            nav_matches_by_activity.setdefault(item["base_key"], []).append((match, status, nav_diagnostic))
         price = match["price"] if match else 0.0
         code = item["job_code"]
         kind = "COIG" if code.upper().startswith("COIG") or item["job_name"].upper().startswith("COIG") or item["activity"].upper().startswith("COIG") else "Non COIG"
@@ -563,6 +577,7 @@ def main():
             "Codice task": item["task_code"], "Numero riga commessa": item["plan_code"],
             "Nome commessa": item["job_name"], "Dettaglio attività": item["activity"],
             "Stato Attivita": item["state"], "ToBill CRM": item["to_bill"], "CRM Activity ID": item["crm_activity_id"],
+            "CRM Job Detail ID": item["crm_job_detail_id"],
             "Cliente": item["customer"], "Tipo attività": kind,
             "Ore Loggate": item["logged"], "Ore Confermate": item["confirmed_logged"],
             "Ore valorizzate": item["billable"], "Ore valorizzate confermate": item["confirmed_billable"],
@@ -593,11 +608,6 @@ def main():
 
     matched_detail_rows = 0
     for index, row in daily.iterrows():
-        match, status, nav_diagnostic = resolve_job(row)
-        daily.at[index, "Esito valorizzazione"] = status
-        daily.at[index, "Dettaglio tariffa NAV"] = nav_diagnostic
-        if match:
-            daily.at[index, "Prezzo unitario NAV"] = match["price"]
         detail_key = (
             detail_day(row.get(date_field)),
             normalize_person(row.get(person_field, "")),
@@ -605,6 +615,22 @@ def main():
             normalize_code(row.get("Codice task")),
             normalize_code(row.get("Numero riga commessa")),
         )
+        matched_nav = nav_matches_by_activity.get(detail_key, [])
+        if matched_nav:
+            matched_prices = {entry[0]["price"] for entry in matched_nav if entry[0]}
+            if all(entry[1] == "Valorizzata" for entry in matched_nav) and len(matched_prices) == 1:
+                price = next(iter(matched_prices))
+                match, status = {"price": price}, "Valorizzata"
+                nav_diagnostic = "Associata alla riga NAV tramite CRM Job Detail ID dalle attività ZDT"
+            else:
+                match, status = None, "Tariffa NAV non univoca"
+                nav_diagnostic = "Righe ZDT collegate a più righe NAV: " + " | ".join(entry[2] for entry in matched_nav)
+        else:
+            match, status, nav_diagnostic = resolve_job(row)
+        daily.at[index, "Esito valorizzazione"] = status
+        daily.at[index, "Dettaglio tariffa NAV"] = nav_diagnostic
+        if match:
+            daily.at[index, "Prezzo unitario NAV"] = match["price"]
         if detail_key not in billable_by_activity:
             # Senza riga CRM/Enable Invoice valorizziamo la stessa durata ZDT del calendario.
             billable_hours = max(numeric(row.get("Ore Loggate")) or 0.0, 0.0)
