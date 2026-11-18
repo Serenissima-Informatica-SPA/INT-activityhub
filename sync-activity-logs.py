@@ -538,6 +538,10 @@ def main():
             customer = customer_by_job.get(normalize(job_code), "") or customer_by_job.get(normalize(base_job), "")
             crm_activity_id = text_value(detail.get(detail_crm_activity_id)) if detail_crm_activity_id else ""
             crm_job_detail_id = text_value(detail.get(detail_crm_job_detail_id)) if detail_crm_job_detail_id else ""
+            calendar_key = (
+                day, person_key, normalize_code(base_job),
+                normalize(job_description), normalize(activity_description),
+            )
             activity_key = (
                 day, person_key, normalize_code(job_code), normalize_code(task_code), normalize_code(plan_code),
                 normalize(job_description), normalize(activity_description), state_key, to_bill_flag, crm_activity_id, crm_job_detail_id, billable_source,
@@ -547,7 +551,7 @@ def main():
                 "plan_code": plan_code, "job_name": job_description, "activity": activity_description,
                 "state": state_label, "to_bill": to_bill_flag, "crm_activity_id": crm_activity_id, "crm_job_detail_id": crm_job_detail_id, "customer": customer,
                 "logged": 0.0, "billable": 0.0, "confirmed_billable": 0.0, "confirmed_logged": 0.0,
-                "billable_source": billable_source, "base_key": base_key,
+                "billable_source": billable_source, "calendar_key": calendar_key,
             })
             item["logged"] += logged_minutes / 60.0
             item["billable"] += billable_hours
@@ -559,7 +563,7 @@ def main():
         state_counts = detail_frame[detail_zdt_state].fillna("(vuoto)").astype(str).value_counts().head(12).to_dict()
         print(f"Distribuzione aggregata degli stati ZDT: {state_counts}")
     revenue_records = []
-    nav_matches_by_activity = {}
+    nav_matches_by_calendar_activity = {}
     for item in revenue_groups.values():
         nav_row = {
             "Codice commessa": item["job_code"], "Codice task": item["task_code"],
@@ -567,8 +571,8 @@ def main():
             "CRM Job Detail ID": item["crm_job_detail_id"],
         }
         match, status, nav_diagnostic = resolve_job(nav_row)
-        if all(item["base_key"]):
-            nav_matches_by_activity.setdefault(item["base_key"], []).append((match, status, nav_diagnostic))
+        if all(item["calendar_key"]):
+            nav_matches_by_calendar_activity.setdefault(item["calendar_key"], []).append((match, status, nav_diagnostic))
         price = match["price"] if match else 0.0
         code = item["job_code"]
         kind = "COIG" if code.upper().startswith("COIG") or item["job_name"].upper().startswith("COIG") or item["activity"].upper().startswith("COIG") else "Non COIG"
@@ -607,6 +611,7 @@ def main():
     daily["Esito valorizzazione"] = ""
 
     matched_detail_rows = 0
+    nav_calendar_matches = 0
     for index, row in daily.iterrows():
         detail_key = (
             detail_day(row.get(date_field)),
@@ -615,13 +620,21 @@ def main():
             normalize_code(row.get("Codice task")),
             normalize_code(row.get("Numero riga commessa")),
         )
-        matched_nav = nav_matches_by_activity.get(detail_key, [])
+        calendar_key = (
+            detail_day(row.get(date_field)),
+            normalize_person(row.get(person_field, "")),
+            normalize_code(row.get("Codice commessa")),
+            normalize(text_value(row.get("Nome commessa"))),
+            normalize(text_value(row.get("Dettaglio attività"))),
+        )
+        matched_nav = nav_matches_by_calendar_activity.get(calendar_key, [])
         if matched_nav:
+            nav_calendar_matches += 1
             matched_prices = {entry[0]["price"] for entry in matched_nav if entry[0]}
             if all(entry[1] == "Valorizzata" for entry in matched_nav) and len(matched_prices) == 1:
                 price = next(iter(matched_prices))
                 match, status = {"price": price}, "Valorizzata"
-                nav_diagnostic = "Associata alla riga NAV tramite CRM Job Detail ID dalle attività ZDT"
+                nav_diagnostic = "Associata tramite CRM Job Detail ID ZDT e descrizioni condivise con il calendario"
             else:
                 match, status = None, "Tariffa NAV non univoca"
                 nav_diagnostic = "Righe ZDT collegate a più righe NAV: " + " | ".join(entry[2] for entry in matched_nav)
@@ -671,6 +684,7 @@ def main():
     if len(daily) and matched_detail_rows == 0:
         raise ValueError("Nessuna riga giornaliera abbinata al nuovo dettaglio CRM; verificare le chiavi")
 
+    print(f"Righe calendario con tariffa ricavata dal dettaglio ZDT/CRM: {nav_calendar_matches}/{len(daily)}")
     print(f"Righe giornaliere abbinate al dettaglio CRM: {matched_detail_rows}/{len(daily)}")
 
     daily = daily.rename(columns={date_field: "Data", person_field: "Componente"})
