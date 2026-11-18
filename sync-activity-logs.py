@@ -292,11 +292,13 @@ def main():
         plan_code = normalize_code(row.get("Numero riga commessa"))
         key = (job_code, task_code, plan_code)
         crm_detail_id = normalize_code(row.get("CRM Job Detail ID"))
-        candidates = jobs_by_detail_id.get(crm_detail_id, []) if crm_detail_id else []
-        match_level = "CRM Job Detail ID"
+        # La chiave ZDT completa è più specifica dell'ID CRM: lo stesso ID CRM
+        # può essere collegato a più righe NAV e produrre falsi casi non univoci.
+        candidates = jobs_by_key.get(key, []) if all(key) else []
+        match_level = "commessa + task + riga"
         if not candidates:
-            candidates = jobs_by_key.get(key, [])
-            match_level = "commessa + task + riga"
+            candidates = jobs_by_detail_id.get(crm_detail_id, []) if crm_detail_id else []
+            match_level = "CRM Job Detail ID"
         if not candidates and job_code and task_code:
             candidates = jobs_by_job_task.get((job_code, task_code), [])
             match_level = "commessa + task"
@@ -416,6 +418,29 @@ def main():
             f"Colonne chiave mancanti nel dettaglio CRM: {missing_detail}; "
             f"colonne presenti: {list(detail_frame.columns)}"
         )
+    diagnostic_person = find_field(detail_frame.columns, "person")
+    diagnostic_job = find_field(detail_frame.columns, "job_code")
+    diagnostic_task = find_zdt_field(detail_frame.columns, "task_code")
+    diagnostic_plan = find_zdt_field(detail_frame.columns, "plan_code")
+    diagnostic_prices = next((c for c in detail_frame.columns if normalize(c) == "navunitprice"), None)
+    diagnostic_counts = next((c for c in detail_frame.columns if normalize(c) == "navmatchcount"), None)
+    diagnostic_status = next((c for c in detail_frame.columns if normalize(c) == "navmatchstatus"), None)
+    if diagnostic_person and diagnostic_job:
+        mask = (
+            detail_frame[diagnostic_person].astype(str).map(normalize_person).eq(normalize_person("Favero Matteo"))
+            & detail_frame[diagnostic_job].astype(str).map(normalize_code).isin({"co26001091", "co26003556"})
+        )
+        sample = detail_frame.loc[mask].drop_duplicates(
+            subset=[c for c in (diagnostic_job, diagnostic_task, diagnostic_plan, diagnostic_prices, diagnostic_counts, diagnostic_status) if c]
+        )
+        for _, diagnostic_row in sample.iterrows():
+            print(
+                "Debug NAV Favero:",
+                {label: text_value(diagnostic_row.get(column)) if column else "" for label, column in (
+                    ("commessa", diagnostic_job), ("task ZDT", diagnostic_task), ("riga ZDT", diagnostic_plan),
+                    ("tariffa NAV", diagnostic_prices), ("match count", diagnostic_counts), ("match status", diagnostic_status),
+                )}
+            )
     if detail_billable is None and detail_invoice_hours is None and detail_invoice_minutes is None:
         raise ValueError("Il dettaglio CRM non contiene Ore Fatturabili né InvoiceQuantity")
 
