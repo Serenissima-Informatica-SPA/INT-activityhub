@@ -636,7 +636,6 @@ def main():
         print(f"Distribuzione aggregata degli stati ZDT: {state_counts}")
     revenue_records = []
     nav_matches_by_zdt_activity = {}
-    nav_matches_by_job_task_plan = {}
     nav_matches_by_calendar_activity = {}
     nav_matches_by_calendar_plan = {}
     for item in revenue_groups.values():
@@ -663,13 +662,6 @@ def main():
         )
         if all(zdt_activity_key):
             nav_matches_by_zdt_activity.setdefault(zdt_activity_key, []).append((match, status, nav_diagnostic))
-        job_task_plan_key = (
-            normalize_code(item["job_code"]),
-            normalize_code(item["task_code"]),
-            normalize_code(item["plan_code"]),
-        )
-        if all(job_task_plan_key):
-            nav_matches_by_job_task_plan.setdefault(job_task_plan_key, []).append((match, status, nav_diagnostic))
         if all(item["calendar_plan_key"]):
             nav_matches_by_calendar_plan.setdefault(item["calendar_plan_key"], []).append((match, status, nav_diagnostic))
             if item["calendar_key"][-1]:
@@ -730,11 +722,6 @@ def main():
         calendar_key = (*calendar_plan_key, normalize(text_value(row.get("Dettaglio attività"))))
         matched_nav = nav_matches_by_zdt_activity.get(detail_key, [])
         if not matched_nav:
-            # La tariffa NAV è legata alla riga commessa, non alla singola data/persona.
-            # Il feed economico può quindi trasferirla al calendario tramite la chiave ZDT.
-            zdt_job_task_plan_key = (detail_key[2], detail_key[3], detail_key[4])
-            matched_nav = nav_matches_by_job_task_plan.get(zdt_job_task_plan_key, [])
-        if not matched_nav:
             matched_nav = nav_matches_by_calendar_activity.get(calendar_key, [])
         if not matched_nav:
             matched_nav = nav_matches_by_calendar_plan.get(calendar_plan_key, [])
@@ -791,16 +778,6 @@ def main():
         else:
             daily.at[index, "Esito valorizzazione"] = status
 
-    diagnostic_mask = (
-        daily[person_field].astype(str).map(normalize_person).eq(normalize_person("Favero Matteo"))
-        & daily["Codice commessa"].map(normalize_code).isin({"co26001091", "co26003556"})
-    )
-    diagnostic_rows = daily.loc[diagnostic_mask, [
-        date_field, person_field, "Codice commessa", "Codice task", "Numero riga commessa",
-        "Ore Loggate", "Ore Confermate", "Prezzo unitario NAV", "Esito valorizzazione", "Dettaglio tariffa NAV",
-    ]].drop_duplicates()
-    for _, diagnostic_row in diagnostic_rows.iterrows():
-        print("Output NAV Favero:", {str(k): text_value(v) for k, v in diagnostic_row.items()})
     if len(daily) and matched_detail_rows == 0:
         raise ValueError("Nessuna riga giornaliera abbinata al nuovo dettaglio CRM; verificare le chiavi")
 
