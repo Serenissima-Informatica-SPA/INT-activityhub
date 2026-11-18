@@ -284,15 +284,48 @@ def main():
         if not candidates and job_code:
             candidates = jobs_by_job.get(job_code, [])
             match_level = "commessa"
+            zdt_descriptions = {
+                normalize(text_value(row.get(field)))
+                for field in ("Nome commessa", "Dettaglio attività", "Descrizione Riga", "Descrizione Task")
+                if normalize(text_value(row.get(field)))
+            }
+            nav_description_fields = ("Plan Description", "Detail Description")
+            def nav_descriptions(item):
+                return {
+                    normalize(text_value(item.get(field)))
+                    for field in nav_description_fields
+                    if normalize(text_value(item.get(field)))
+                }
+            exact_description_matches = [
+                item for item in candidates
+                if zdt_descriptions & nav_descriptions(item)
+            ]
+            if exact_description_matches:
+                candidates = exact_description_matches
+                match_level = "commessa + descrizione esatta ZDT/NAV"
+            else:
+                description_matches = [
+                    item for item in candidates
+                    if any(
+                        len(zdt_desc) >= 8 and len(nav_desc) >= 8
+                        and (zdt_desc in nav_desc or nav_desc in zdt_desc)
+                        for zdt_desc in zdt_descriptions
+                        for nav_desc in nav_descriptions(item)
+                    )
+                ]
+                if description_matches:
+                    candidates = description_matches
+                    match_level = "commessa + descrizione parziale ZDT/NAV"
         if not candidates:
             return None, "Commessa/task/riga non abbinati", "Nessuna riga NAV corrispondente alle chiavi ZDT/CRM"
 
         def candidate_text(item):
             task = text_value(item.get("JobTaskNo")) or "—"
             plan = text_value(item.get("JobPlanNo")) or "—"
+            description = text_value(item.get("Plan Description")) or text_value(item.get("Detail Description")) or "descrizione assente"
             price = numeric(item.get("Unit Price"))
             price_text = f"{price:.2f} €" if price is not None else "tariffa assente"
-            return f"task {task} · riga {plan} · {price_text}/h"
+            return f"task {task} · riga {plan} · {description[:48]} · {price_text}/h"
 
         candidate_list = "; ".join(candidate_text(item) for item in candidates[:8])
         if len(candidates) > 8:
@@ -571,6 +604,7 @@ def main():
             "Codice commessa": item["job_code"], "Codice task": item["task_code"],
             "Numero riga commessa": item["plan_code"],
             "CRM Job Detail ID": item["crm_job_detail_id"],
+            "Nome commessa": item["job_name"], "Dettaglio attività": item["activity"],
         }
         match, status, nav_diagnostic = resolve_job(nav_row)
         if all(item["calendar_plan_key"]):
