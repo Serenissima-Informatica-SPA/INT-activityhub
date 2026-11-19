@@ -110,7 +110,7 @@ export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: Te
   const [month, setMonth] = useSessionState(`${viewStateKey}:month`, () => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const [group, setGroup] = useSessionState<TeamGroup>(`${viewStateKey}:group`, lockedGroup || "BI");
   const [selectedPerson, setSelectedPerson] = useSessionState(`${viewStateKey}:person`, TEAM_MEMBERS[lockedGroup || "BI"][0]);
-  const [selectedCalendarDay, setSelectedCalendarDay] = useState<string | null>(null);
+  const [selectedCalendarDay, setSelectedCalendarDay] = useSessionState<string | null>(`${viewStateKey}:selected-day`, null);
 
   async function refresh() {
     setLoading(true); setError("");

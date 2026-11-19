@@ -23,14 +23,14 @@ export function useSessionState<T>(
 ): [T, Dispatch<SetStateAction<T>>] {
   const [value, setValue] = useState<T>(() => {
     try {
-      const stored = sessionStorage.getItem(key);
+      const stored = localStorage.getItem(key) ?? sessionStorage.getItem(key);
       if (stored !== null) return deserialize<T>(stored);
     } catch { /* Fall back to the default if storage is unavailable or invalid */ }
     return typeof initialValue === "function" ? (initialValue as () => T)() : initialValue;
   });
 
   useEffect(() => {
-    try { sessionStorage.setItem(key, serialize(value)); }
+    try { localStorage.setItem(key, serialize(value)); }
     catch { /* Keep the page usable if storage is unavailable */ }
   }, [key, value]);
 

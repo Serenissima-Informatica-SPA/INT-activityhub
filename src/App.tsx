@@ -20,7 +20,7 @@ function HubApp({ scope }: { scope: AccessScope }) {
   const scrollStorageKey = (pageId: PageId) => `activityhub:scroll:${scope}:${pageId}`;
   const [page, setPage] = useState<PageId>(() => {
     try {
-      const stored = sessionStorage.getItem(pageStorageKey) as PageId | null;
+      const stored = (localStorage.getItem(pageStorageKey) ?? sessionStorage.getItem(pageStorageKey)) as PageId | null;
       if (stored && PAGE_ITEMS.some((item) => item.id === stored)
         && !(scope === "DEV" && stored === "job-progress")) return stored;
     } catch { /* sessionStorage can be unavailable in restricted browser contexts */ }
@@ -37,8 +37,8 @@ function HubApp({ scope }: { scope: AccessScope }) {
     try {
       const currentScroll = window.scrollY;
       scrollPositions.current[page] = currentScroll;
-      sessionStorage.setItem(scrollStorageKey(page), String(currentScroll));
-      sessionStorage.setItem(pageStorageKey, nextPage);
+      localStorage.setItem(scrollStorageKey(page), String(currentScroll));
+      localStorage.setItem(pageStorageKey, nextPage);
     } catch { /* Keep navigation working when sessionStorage is unavailable */ }
     setVisitedPages((previous) => new Set(previous).add(nextPage));
     setPage(nextPage);
@@ -46,7 +46,7 @@ function HubApp({ scope }: { scope: AccessScope }) {
 
   useEffect(() => {
     try {
-      const saved = Number(sessionStorage.getItem(scrollStorageKey(page)) || 0);
+      const saved = Number(localStorage.getItem(scrollStorageKey(page)) || sessionStorage.getItem(scrollStorageKey(page)) || 0);
       scrollPositions.current[page] = Number.isFinite(saved) ? saved : 0;
     } catch { /* Use the in-memory position when sessionStorage is unavailable */ }
 
@@ -63,7 +63,7 @@ function HubApp({ scope }: { scope: AccessScope }) {
     const saveScroll = () => {
       const position = window.scrollY;
       scrollPositions.current[page] = position;
-      try { sessionStorage.setItem(scrollStorageKey(page), String(position)); }
+      try { localStorage.setItem(scrollStorageKey(page), String(position)); }
       catch { /* Keep the in-memory position when sessionStorage is unavailable */ }
     };
     window.addEventListener("scroll", saveScroll, { passive: true });
@@ -131,6 +131,7 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const passwordFlowRef = useRef(initialPasswordFlow);
+  const verifiedAccessRef = useRef<{ userId: string; scope: AccessScope } | null>(null);
   const [busy, setBusy] = useState(false);
   const [accessScope, setAccessScope] = useState<AccessScope>("all");
 
@@ -149,6 +150,7 @@ export default function App() {
     const verify = async (session: any, forcePasswordSetup = false) => {
       if (!session?.user) {
         if (alive) {
+          verifiedAccessRef.current = null;
           setAccessScope("all");
           if (forcePasswordSetup) {
             markPasswordFlow(false);
@@ -165,7 +167,8 @@ export default function App() {
         return;
       }
 
-      if (alive) setGate("checking");
+      const alreadyVerified = verifiedAccessRef.current?.userId === session.user.id;
+      if (alive && !alreadyVerified) setGate("checking");
       const { data, error: accessError } = await supabase
         .from("activityhub_access")
         .select("user_id,access_scope")
@@ -184,6 +187,7 @@ export default function App() {
       }
 
       const scope = data.access_scope === "DEV" ? "DEV" : "all";
+      verifiedAccessRef.current = { userId: session.user.id, scope };
       setAccessScope(scope);
       setError("");
       setGate("ready");
