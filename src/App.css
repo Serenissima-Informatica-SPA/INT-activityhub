@@ -2230,6 +2230,8 @@ button:hover {
 .activity-hub-nav {
   display: flex;
   flex-wrap: wrap;
+  width: 100%;
+  min-width: 0;
   gap: 10px;
   padding: 12px 24px;
   border-bottom: 1px solid #e2e8f0;
@@ -2256,5 +2258,13 @@ button:hover {
 }
 @media (max-width: 640px) {
   .activity-hub-nav { gap: 6px; padding: 8px; }
-  .activity-hub-nav button { flex: 1 1 auto; padding: 8px; font-size: 12px; }
+  .activity-hub-nav button { flex: 1 1 0; min-width: 0; padding: 8px 5px; font-size: 12px; line-height: 1.2; text-align: center; white-space: normal; }
+  .page { width: 100%; min-width: 0; padding: 20px 12px 32px; gap: 16px; }
+  .hero { flex-wrap: wrap; gap: 14px; padding: 18px 16px; }
+  .hero-buttons { flex-wrap: wrap; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
 }
+
+#root { width: 100%; min-width: 0; }
+.activity-hub-page { width: 100%; max-width: 100%; min-width: 0; }
+.activity-hub-page[hidden] { display: none !important; }

@@ -86,17 +86,17 @@ function HubApp({ scope }: { scope: AccessScope }) {
         ))}
       </nav>
       {visitedPages.has("activity-calendar") && (
-        <div hidden={page !== "activity-calendar"}>
+        <div className="activity-hub-page" hidden={page !== "activity-calendar"}>
           <ActivityCalendarPage lockedGroup={scope === "DEV" ? "DEV" : undefined} />
         </div>
       )}
       {visitedPages.has("group-analysis") && (
-        <div hidden={page !== "group-analysis"}>
+        <div className="activity-hub-page" hidden={page !== "group-analysis"}>
           <GroupAnalysisPage lockedGroup={scope === "DEV" ? "DEV" : undefined} />
         </div>
       )}
       {scope === "all" && visitedPages.has("job-progress") && (
-        <div hidden={page !== "job-progress"}>
+        <div className="activity-hub-page" hidden={page !== "job-progress"}>
           <JobProgressPage
             tasks={tasks}
             onSwitchPage={() => switchPage("activity-calendar")}
