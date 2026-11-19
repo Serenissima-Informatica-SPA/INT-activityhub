@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSessionState } from "./useSessionState";
 import { getActivityLogs, getActivityRevenue } from "./api";
 import RevenueEstimate from "./RevenueEstimate";
 import { TEAM_MEMBERS, type TeamGroup } from "./teamMembers";
@@ -100,14 +101,15 @@ function formatDay(dayKey: string) {
 }
 
 export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: TeamGroup } = {}) {
+  const viewStateKey = `activityhub:view:activity-calendar:${lockedGroup || "all"}`;
   const [records, setRecords] = useState<Row[]>([]);
   const [revenueRecords, setRevenueRecords] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => new Date());
-  const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
-  const [group, setGroup] = useState<TeamGroup>(lockedGroup || "BI");
-  const [selectedPerson, setSelectedPerson] = useState(TEAM_MEMBERS[lockedGroup || "BI"][0]);
+  const [month, setMonth] = useSessionState(`${viewStateKey}:month`, () => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [group, setGroup] = useSessionState<TeamGroup>(`${viewStateKey}:group`, lockedGroup || "BI");
+  const [selectedPerson, setSelectedPerson] = useSessionState(`${viewStateKey}:person`, TEAM_MEMBERS[lockedGroup || "BI"][0]);
   const [selectedCalendarDay, setSelectedCalendarDay] = useState<string | null>(null);
 
   async function refresh() {
@@ -571,3 +573,4 @@ export default function ActivityCalendarPage({ lockedGroup }: { lockedGroup?: Te
     </main>
   );
 }
+

@@ -194,6 +194,9 @@ export default function App() {
       void verify(data.session, initialFlow);
     });
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      // Il rinnovo silenzioso del token non cambia l'utente né il suo ambito.
+      // Non riaprire il gate: smonterebbe HubApp e azzererebbe la vista corrente.
+      if (event === "TOKEN_REFRESHED") return;
       const forcePasswordSetup = event === "PASSWORD_RECOVERY" || isPasswordSetupLink();
       if (forcePasswordSetup) markPasswordFlow(true);
       window.setTimeout(() => {
@@ -275,7 +278,7 @@ export default function App() {
   };
 
   if (gate === "ready") {
-    return <><div className="auth-topbar"><span>Accesso effettuato</span><button className="auth-logout" onClick={() => void supabase?.auth.signOut()}>Esci</button></div><HubApp scope={accessScope} /></>;
+    return <><div className="auth-topbar"><span>Accesso effettuato</span><button className="auth-logout" onClick={() => void supabase?.auth.signOut()}>Esci</button></div><HubApp key={accessScope} scope={accessScope} /></>;
   }
 
   if (gate === "loading" || gate === "checking") {

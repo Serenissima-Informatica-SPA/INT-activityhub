@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useSessionState } from "./useSessionState";
 import { getActivityLogs } from "./api";
 import { TEAM_MEMBERS, type TeamGroup } from "./teamMembers";
 import "./GroupAnalysisPage.css";
@@ -89,11 +90,12 @@ const eur = (value: number) => value.toLocaleString("it-IT", { style: "currency"
 const monthLabel = (date: Date) => date.toLocaleDateString("it-IT", { month: "long", year: "numeric" });
 
 export default function GroupAnalysisPage({ lockedGroup }: { lockedGroup?: TeamGroup } = {}) {
+  const viewStateKey = `activityhub:view:group-analysis:${lockedGroup || "all"}`;
   const [records, setRecords] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [group, setGroup] = useState<TeamGroup>(lockedGroup || "BI");
-  const [month, setMonth] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [group, setGroup] = useSessionState<TeamGroup>(`${viewStateKey}:group`, lockedGroup || "BI");
+  const [month, setMonth] = useSessionState(`${viewStateKey}:month`, () => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
   const todayKey = italianToday();
 
   useEffect(() => {
@@ -306,3 +308,4 @@ export default function GroupAnalysisPage({ lockedGroup }: { lockedGroup?: TeamG
     </main>
   );
 }
+

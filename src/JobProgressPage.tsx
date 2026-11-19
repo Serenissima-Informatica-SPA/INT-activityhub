@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as XLSX from "xlsx-js-style";
+import { useSessionState } from "./useSessionState";
 import { dispatchSyncJobsWorkflowWithToken, getJobProgressLineNotes, getJobs, getJobsDataLastUpdate, getResources, saveJobProgressLineNote, syncJobsFromPrimarySource } from "./api";
 import type { Task } from "./types";
 
@@ -177,23 +178,24 @@ function readStoredToken(): string {
 }
 
 export default function JobProgressPage({ tasks, onSwitchPage, onCreateTaskFromJob }: Props) {
+  const viewStateKey = "activityhub:view:job-progress";
   const [jobLines, setJobLines] = useState<JobLine[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
-  const [filterText, setFilterText] = useState("");
-  const [divisionScope, setDivisionScope] = useState<GroupScope>("bi");
-  const [hideFullyInvoiced, setHideFullyInvoiced] = useState(true);
-  const [expandedJobs, setExpandedJobs] = useState<Record<string, boolean>>({});
+  const [filterText, setFilterText] = useSessionState(`${viewStateKey}:filter-text`, "");
+  const [divisionScope, setDivisionScope] = useSessionState<GroupScope>(`${viewStateKey}:division-scope`, "bi");
+  const [hideFullyInvoiced, setHideFullyInvoiced] = useSessionState(`${viewStateKey}:hide-invoiced`, true);
+  const [expandedJobs, setExpandedJobs] = useSessionState<Record<string, boolean>>(`${viewStateKey}:expanded-jobs`, {});
   const [isExporting, setIsExporting] = useState(false);
   const [githubToken, setGithubToken] = useState("");
   const [lineNotes, setLineNotes] = useState<Record<string, string>>({});
   const noteSaveTimersRef = useRef<Record<string, number>>({});
   const [isNotesLoading, setIsNotesLoading] = useState(true);
-  const [selectedResourceNos, setSelectedResourceNos] = useState<string[]>([]);
-  const [resourceFilterSearch, setResourceFilterSearch] = useState("");
+  const [selectedResourceNos, setSelectedResourceNos] = useSessionState<string[]>(`${viewStateKey}:resources`, []);
+  const [resourceFilterSearch, setResourceFilterSearch] = useSessionState(`${viewStateKey}:resource-search`, "");
   const [resourceDropdownOpen, setResourceDropdownOpen] = useState(false);
   const resourceDropdownRef = useRef<HTMLDivElement>(null);
   const [resourceDescriptions, setResourceDescriptions] = useState<Record<string, string>>({});
@@ -1252,3 +1254,4 @@ export default function JobProgressPage({ tasks, onSwitchPage, onCreateTaskFromJ
     </div>
   );
 }
+
