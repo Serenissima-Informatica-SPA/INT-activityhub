@@ -16,11 +16,59 @@ const PAGE_ITEMS: { id: PageId; label: string }[] = [
 ];
 
 function HubApp({ scope }: { scope: AccessScope }) {
-  const [page, setPage] = useState<PageId>("activity-calendar");
+  const pageStorageKey = `activityhub:last-page:${scope}`;
+  const scrollStorageKey = (pageId: PageId) => `activityhub:scroll:${scope}:${pageId}`;
+  const [page, setPage] = useState<PageId>(() => {
+    try {
+      const stored = sessionStorage.getItem(pageStorageKey) as PageId | null;
+      if (stored && PAGE_ITEMS.some((item) => item.id === stored)
+        && !(scope === "DEV" && stored === "job-progress")) return stored;
+    } catch { /* sessionStorage can be unavailable in restricted browser contexts */ }
+    return "activity-calendar";
+  });
+  const [visitedPages, setVisitedPages] = useState<Set<PageId>>(() => new Set([page]));
+  const scrollPositions = useRef<Partial<Record<PageId, number>>>({});
   const tasks: Task[] = [];
   const visiblePages = scope === "DEV"
     ? PAGE_ITEMS.filter((item) => item.id === "activity-calendar" || item.id === "group-analysis")
     : PAGE_ITEMS;
+
+  const switchPage = (nextPage: PageId) => {
+    try {
+      const currentScroll = window.scrollY;
+      scrollPositions.current[page] = currentScroll;
+      sessionStorage.setItem(scrollStorageKey(page), String(currentScroll));
+      sessionStorage.setItem(pageStorageKey, nextPage);
+    } catch { /* Keep navigation working when sessionStorage is unavailable */ }
+    setVisitedPages((previous) => new Set(previous).add(nextPage));
+    setPage(nextPage);
+  };
+
+  useEffect(() => {
+    try {
+      const saved = Number(sessionStorage.getItem(scrollStorageKey(page)) || 0);
+      scrollPositions.current[page] = Number.isFinite(saved) ? saved : 0;
+    } catch { /* Use the in-memory position when sessionStorage is unavailable */ }
+
+    const savedPosition = scrollPositions.current[page] || 0;
+    const frame = window.requestAnimationFrame(() => window.scrollTo(0, savedPosition));
+    const delayedRestore = window.setTimeout(() => window.scrollTo(0, savedPosition), 120);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      window.clearTimeout(delayedRestore);
+    };
+  }, [page, scope]);
+
+  useEffect(() => {
+    const saveScroll = () => {
+      const position = window.scrollY;
+      scrollPositions.current[page] = position;
+      try { sessionStorage.setItem(scrollStorageKey(page), String(position)); }
+      catch { /* Keep the in-memory position when sessionStorage is unavailable */ }
+    };
+    window.addEventListener("scroll", saveScroll, { passive: true });
+    return () => window.removeEventListener("scroll", saveScroll);
+  }, [page, scope]);
 
   return (
     <>
@@ -31,22 +79,30 @@ function HubApp({ scope }: { scope: AccessScope }) {
             type="button"
             className={page === item.id ? "active" : ""}
             aria-current={page === item.id ? "page" : undefined}
-            onClick={() => setPage(item.id)}
+            onClick={() => switchPage(item.id)}
           >
             {item.label}
           </button>
         ))}
       </nav>
-      {page === "activity-calendar" ? (
-        <ActivityCalendarPage lockedGroup={scope === "DEV" ? "DEV" : undefined} />
-      ) : page === "group-analysis" ? (
-        <GroupAnalysisPage lockedGroup={scope === "DEV" ? "DEV" : undefined} />
-      ) : scope === "all" ? (
-        <JobProgressPage
-          tasks={tasks}
-          onSwitchPage={() => setPage("activity-calendar")}
-        />
-      ) : null}
+      {visitedPages.has("activity-calendar") && (
+        <div hidden={page !== "activity-calendar"}>
+          <ActivityCalendarPage lockedGroup={scope === "DEV" ? "DEV" : undefined} />
+        </div>
+      )}
+      {visitedPages.has("group-analysis") && (
+        <div hidden={page !== "group-analysis"}>
+          <GroupAnalysisPage lockedGroup={scope === "DEV" ? "DEV" : undefined} />
+        </div>
+      )}
+      {scope === "all" && visitedPages.has("job-progress") && (
+        <div hidden={page !== "job-progress"}>
+          <JobProgressPage
+            tasks={tasks}
+            onSwitchPage={() => switchPage("activity-calendar")}
+          />
+        </div>
+      )}
     </>
   );
 }
@@ -272,3 +328,4 @@ export default function App() {
     </div>
   );
 }
+
